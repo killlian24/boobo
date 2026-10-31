@@ -22,6 +22,21 @@ services:
       # danach wird der Wert aus den App-Einstellungen (SQLite) genommen.
       - FEED_INTERVAL_MINUTES=180
     restart: unless-stopped
+    networks:
+      boobo-net:
+        # Feste Container-IP, damit sie nach Neustarts/Redeploys gleich bleibt.
+        ipv4_address: 172.22.10.10
 
 volumes:
   boobo-data:
+
+networks:
+  # Eigenes Bridge-Netz mit festem Subnetz (Bereich 172.22.x.x ist auf dem NAS frei).
+  # Erreichbar ist die App im Heimnetz weiterhin über NAS-IP:8099 (Port-Mapping oben);
+  # die feste IP hilft, wenn andere Container (z. B. Home Assistant) Boobo direkt ansprechen sollen.
+  boobo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.10.0/24
+          gateway: 172.22.10.1

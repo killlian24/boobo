@@ -35,6 +35,17 @@ Portainer klont das Repository und baut das Image direkt auf dem NAS – kein Im
 Der erste Build dauert je nach NAS etwa 1–3 Minuten (Node-Image laden, Dateien kopieren). Danach läuft der
 Container `boobo` auf Port **8099**, mit Healthcheck und automatischem Neustart.
 
+### Feste Container-IP
+
+Die Compose-Datei legt ein eigenes Bridge-Netz `boobo-net` mit dem Subnetz `172.22.10.0/24` an und gibt dem
+Container die feste Adresse **`172.22.10.10`**. So bleibt die interne IP über Neustarts und Redeploys gleich,
+und Portainer vergibt kein zufälliges Subnetz. Im Heimnetz erreichst du die App trotzdem über `http://NAS-IP:8099`
+(Port-Mapping); die feste IP ist für andere Container auf demselben NAS gedacht, etwa Home Assistant im Docker.
+
+Falls `172.22.10.x` bei dir doch belegt ist: in `docker-compose.yml` unter `networks:` Subnetz und Gateway
+sowie beim Service `ipv4_address` anpassen (alle drei im selben Bereich), dann den Stack neu deployen.
+Fehlermeldung „Pool overlaps with other one on this address space“ bedeutet genau das.
+
 Alternativ per Kommandozeile auf dem NAS:
 
 ```bash

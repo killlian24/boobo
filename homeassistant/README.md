@@ -14,6 +14,11 @@ Dateien in diesem Ordner:
 | `automation_wiederholung.yaml` | optional: alle 30 min sanft erinnern, solange Bobo noch wartet |
 | `lovelace_card.yaml` | Beispiel-Karte fürs Dashboard |
 
+
+> **Tipp zur Adresse:** Läuft Home Assistant als Container auf demselben NAS, kannst du statt `NAS-IP:8099`
+> auch die feste Container-IP `172.22.10.10:8099` verwenden (siehe `docker-compose.yml`). Dafür muss der
+> HA-Container das Netz `boobo-net` erreichen können; am einfachsten bleibt meist trotzdem `NAS-IP:8099`.
+
 ## 1. NAS-IP eintragen
 
 In allen Dateien steht der Platzhalter `NAS-IP`. Ersetze ihn durch die IP des NAS, z. B. `192.168.1.20`.
