@@ -81,3 +81,123 @@ CSV aller Einträge (`id,side,at,note`), `Content-Disposition: attachment; filen
 - Einstellungen: Intervall in Minuten (PUT /api/settings), CSV-Export-Link.
 - Auto-Refresh: `GET /api/state` + Verlauf alle 30 s und bei `visibilitychange`, damit beide Handys synchron sind. Relative Zeiten jede Minute neu rendern.
 - Design: ruhig, warm, groß, nachttauglich (dunkles Farbschema via `prefers-color-scheme`, Buttons mind. 72 px hoch, nutzbar mit einer Hand).
+
+---
+
+# Erweiterung 2 (Stand 2026-10-31): Doppelschutz, Windeln, Tagesbilanz, Medikamente
+
+Alles Folgende ist **zusätzlich** zum obigen Vertrag. Bestehende Felder und Endpunkte bleiben unverändert
+(Home Assistant liest sie bereits). Alle Zeiten weiterhin ISO-8601 UTC.
+
+## 1. Doppelschutz bei `POST /api/feeds`
+Zwei Handys tippen nachts oft fast gleichzeitig. Darum:
+- Konstante `FEED_DUPLICATE_MINUTES` = 10 (Env, Default 10). Ein „Doppel“ liegt vor, wenn ein bestehender
+  Eintrag existiert mit `|existing.at − new.at| < 10 min` (`new.at` = Body-`at` oder jetzt).
+- Body bekommt optional `on_duplicate`: `"ask"` (Default) | `"force"` | `"skip"`.
+  - `ask`  → bei Doppel `409 { "error": "duplicate", "existing": { feed } }`, nichts gespeichert.
+  - `force` → immer speichern, `201` wie bisher.
+  - `skip` → bei Doppel `200 { "feed": null, "skipped": true, "existing": { feed } }` (für Home Assistant,
+    dort kann niemand nachfragen; HA meldet dann „Schon notiert“).
+- `PATCH` ist nicht betroffen.
+
+## 2. Windeln
+Tabelle `diapers`: `id`, `kind` (`wet` | `dirty`), `at`, `note`, `created_at`, `updated_at` (wie `feeds`).
+- `GET /api/diapers?limit=50&before=<ISO>` → `200 { "diapers": [ {id, kind, at, note, created_at, updated_at} ] }`, `at` absteigend, limit max 500.
+- `POST /api/diapers` Body `{ "kind": "wet", "at": "<ISO optional>", "note": "optional" }` → `201 { "diaper": {...} }`.
+  Kein Doppelschutz (zwei Windeln kurz hintereinander sind real). Gleiche `at`-Validierung wie bei feeds.
+- `PATCH /api/diapers/:id` (Teilmenge von kind/at/note) → `200 { "diaper": {...} }`, `DELETE /api/diapers/:id` → `204`.
+- `GET /api/export.csv?what=diapers` → CSV `id,kind,at,note`, Dateiname `boobo-windeln.csv`. Ohne `what` wie bisher (feeds).
+
+## 3. Tagesbilanz: `summary_24h` in `GET /api/state`
+Neues Feld (zusätzlich zu `today_count` / `last_24h_count`, die bleiben):
+```json
+"summary_24h": {
+  "feeds": 9,                  // alle Einträge mit at > now − 24 h
+  "breast": 7,                 // davon left/right/both
+  "bottle": 2,
+  "longest_gap_minutes": 220,  // größte Lücke zwischen aufeinanderfolgenden Einträgen im Fenster, inkl. der laufenden Lücke seit dem letzten Eintrag; null wenn kein Eintrag im Fenster
+  "avg_gap_minutes": 165,      // Mittel der Lücken zwischen Einträgen im Fenster (ohne laufende Lücke); null wenn < 2 Einträge
+  "diapers_wet": 5,
+  "diapers_dirty": 2
+}
+```
+
+## 4. Medikamente (für Mama)
+Tabelle `medications`:
+| Spalte | Typ | Bedeutung |
+|---|---|---|
+| id | INTEGER PK | |
+| name | TEXT NOT NULL | 1..60 Zeichen, z. B. „Paracetamol“ |
+| dose | TEXT NULL | ≤ 40 Zeichen, z. B. „1 g“ |
+| max_per_day | INTEGER NULL | Höchstzahl in 24 h (rollierend), 1..24, null = unbegrenzt |
+| min_gap_minutes | INTEGER NOT NULL | Mindestabstand zwischen zwei Einnahmen, 0..10080 |
+| active | INTEGER NOT NULL DEFAULT 1 | 0 = pausiert (nicht auf der Startseite, keine Erinnerung) |
+| sort_order | INTEGER NOT NULL | |
+| created_at / updated_at | TEXT | |
+
+Tabelle `med_intakes`: `id`, `medication_id` (FK, ON DELETE CASCADE), `at`, `note`, `created_at`.
+
+**Startbefüllung** einmalig beim ersten Anlegen der Tabelle (Marker `settings.meds_seeded = "1"`):
+1. Paracetamol, „1 g“, max 4, Abstand 360 min
+2. Ibuprofen, „400 mg“, max 4, Abstand 360 min
+3. Magenschutz (PPI), „1 Tablette“, max 1, Abstand 1200 min
+
+**Statusberechnung** pro Medikament (rollierendes 24-h-Fenster, Server-Zeit `now`):
+- `taken_24h` = Einnahmen mit `at > now − 24 h`; `last_at` = letzte Einnahme überhaupt (oder null)
+- `remaining_24h` = `max_per_day − taken_24h` (null wenn max_per_day null; nie < 0)
+- `next_possible_at` = Maximum aus: `last_at + min_gap_minutes` (wenn last_at) und, falls `remaining_24h === 0`,
+  `älteste Einnahme im Fenster + 24 h`. Liegt das Maximum in der Vergangenheit oder gibt es keine Einnahme → `null`.
+- `possible_now` = `next_possible_at === null`
+- `minutes_until_possible` = Minuten bis `next_possible_at`, aufgerundet; null wenn possible_now
+- `due` = `possible_now && last_at !== null && now − last_at < 36 h` (nach 36 h ohne Einnahme gilt das Mittel als
+  abgesetzt, keine Erinnerung mehr; die erste Einnahme wird nie erinnert). Pausierte Medikamente: `due = false`.
+
+Endpunkte:
+- `GET /api/medications` → `200 { "now": "<ISO>", "medications": [ { id, name, dose, max_per_day, min_gap_minutes, active, sort_order, last_at, taken_24h, remaining_24h, possible_now, next_possible_at, minutes_until_possible, due } ] }`
+  (alle, auch pausierte; sortiert nach sort_order, id)
+- `POST /api/medications` Body `{ name, dose?, max_per_day?, min_gap_minutes? }` (Default gap 0) → `201 { "medication": {...mit Status} }`
+- `PATCH /api/medications/:id` Teilmenge von `{ name, dose, max_per_day, min_gap_minutes, active, sort_order }` → `200 { "medication": {...} }`
+- `DELETE /api/medications/:id` → `204` (löscht Einnahmen mit)
+- `POST /api/medications/:id/intakes` Body `{ "at": "<ISO optional>", "note": "optional", "on_duplicate": "ask|force|skip" }`
+  → `201 { "intake": {id, medication_id, at, note, created_at}, "medication": {...mit Status} }`.
+  Doppelschutz wie bei feeds (10 min, gleiche Semantik: 409 / 200 skipped / 201). Eine Einnahme **vor** `next_possible_at`
+  wird **nicht** vom Server verhindert (Mama entscheidet), der Client fragt vorher nach.
+- `GET /api/med-intakes?limit=50&before=<ISO>&medication_id=<id>` → `200 { "intakes": [ { id, medication_id, name, dose, at, note, created_at } ] }`, `at` absteigend
+- `DELETE /api/med-intakes/:id` → `204`
+- `GET /api/export.csv?what=intakes` → CSV `id,medication,dose,at,note`, Dateiname `boobo-medikamente.csv`
+
+Zusätzlich in `GET /api/state` (für Home Assistant, nur **aktive** Medikamente):
+```json
+"medications": [ { "id": 1, "name": "Paracetamol", "dose": "1 g", "taken_24h": 2, "remaining_24h": 2,
+                   "possible_now": false, "next_possible_at": "2026-10-31T19:10:00.000Z", "due": false } ],
+"medications_due": ["Paracetamol 1 g"]      // name + dose der aktiven Medikamente mit due = true
+```
+
+## 5. Frontend-Erweiterungen (public/), verbindliche Verhaltensregeln
+- **Doppelschutz:** Antwort 409 beim Tippen → Rückfrage im Dialog „Um 14:32 schon notiert. Trotzdem eintragen?“ mit
+  „Ja, trotzdem“ (→ erneut mit `on_duplicate: "force"`) und „Nein, passt“. Gilt für Stillen und Medikamente.
+- **Schnellzeiten:** Im Nachtragen-Dialog eine Chip-Zeile über dem Zeitfeld: „vor 10 min · 20 min · 30 min · 45 min · 1 h“
+  setzt das Zeitfeld. **Langes Drücken** (≥ 500 ms) auf Links/Rechts/Beide/Flasche öffnet Nachtragen mit vorgewählter
+  Seite, ohne danach einen normalen Tipp auszulösen (kein Kontextmenü, keine Textauswahl).
+- **Nachtmodus:** Einstellungen bekommen „Erscheinungsbild“ als Segment System / Hell / Dunkel (localStorage `boobo.theme`,
+  gesetzt als `html[data-theme="light|dark"]`, bei System kein Attribut) und einen Schalter „Nachts dimmen (22–7 Uhr)“
+  (localStorage `boobo.night`, Default an). Aktiv zwischen 22:00 und 07:00 Ortszeit (minütlich geprüft): erzwingt dunkle
+  Tokens und `html.night` mit gedämpften Werten (dunklerer Hintergrund, etwas weniger Kontrast, entsättigte Seitenfarben).
+  CSS: dunkle Tokens einmal unter `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) }` und einmal
+  unter `:root[data-theme="dark"]`; `theme-color`-Meta wird per JS nachgezogen.
+- **Tagesbilanz:** Karte „Letzte 24 Stunden“ über dem Verlauf: „9 Mal gestillt · längste Pause 3 h 40“ und darunter
+  „Windeln: 5 nass, 2 voll“. Kein Durchschnitt auf der Startseite. Bei 0 Einträgen: Karte ausblenden.
+- **Windeln:** Unter den vier Still-Buttons eine kleinere Reihe mit zwei Buttons „Nass“ und „Voll“ (56 px hoch), ein Tipp
+  = `POST /api/diapers` jetzt, Toast mit Rückgängig (→ DELETE). Windeln erscheinen im Verlauf „Bisher“ chronologisch
+  zwischen den Still-Einträgen (eigene Zeile mit Tropfen-Symbol, Tippen → Zeit ändern/löschen).
+- **Medikamente:** Karte „Für Mama“ zwischen Windeln und Tagesbilanz, nur aktive Medikamente. Pro Zeile: Name + Dosis,
+  Statuszeile, Button „Genommen“. Statustexte: noch nie → „Noch nichts genommen“; möglich → „Geht wieder · zuletzt 12:10“
+  (bzw. „Geht jetzt“ wenn `due`); noch nicht → „Wieder ab 16:30 · 2 von 4“; `remaining_24h === 0` → „Für heute komplett · 4 von 4“.
+  Tipp vor `next_possible_at` → Rückfrage „Eigentlich erst ab 16:30. Trotzdem notieren?“ („Ja, trotzdem“ / „Lieber warten“).
+  Toast „Paracetamol, 14:32. Notiert.“ + Rückgängig (→ DELETE intake). Kleiner Link „Alle Einnahmen“ öffnet eine Liste
+  (letzte 50, löschen möglich). Verwaltung in den Einstellungen: Liste aller Medikamente mit Name, Dosis, „max. pro Tag“,
+  „Abstand in Stunden“ (Eingabe in Stunden, API bekommt Minuten), Pausieren-Schalter, Löschen, „Hinzufügen“.
+- **Startbildschirm-Hilfe:** In den Einstellungen ein aufklappbarer Abschnitt „Als App auf den Startbildschirm“ mit
+  iPhone-Schritten (Safari → Teilen → Zum Home-Bildschirm) und Android-Schritten: Chrome kann Apps ohne HTTPS nicht
+  installieren; darum einmalig `chrome://flags/#unsafely-treat-insecure-origin-as-secure` öffnen, auf „Enabled“ stellen,
+  `location.origin` (die App zeigt den echten Wert) ins Textfeld, Chrome neu starten, dann Menü ⋮ → „App installieren“.
