@@ -1,5 +1,5 @@
 /* Boobo Service Worker – Cache-first für App-Shell, Network-only für /api/ */
-var CACHE_VERSION = 'boobo-shell-v1';
+var CACHE_VERSION = 'boobo-shell-v2';
 var SHELL = [
   '/',
   '/index.html',
