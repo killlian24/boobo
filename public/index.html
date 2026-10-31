@@ -17,6 +17,17 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/app.css">
+  <script>
+    /* Erscheinungsbild vor dem ersten Zeichnen setzen (siehe app.js applyTheme) */
+    (function () {
+      try {
+        var d = document.documentElement, t = localStorage.getItem('boobo.theme');
+        if (t === 'light' || t === 'dark') d.setAttribute('data-theme', t);
+        var h = new Date().getHours();
+        if (localStorage.getItem('boobo.night') !== '0' && (h >= 22 || h < 7)) d.classList.add('night');
+      } catch (e) { /* kein localStorage */ }
+    })();
+  </script>
 </head>
 <body>
   <div id="offline" class="banner" hidden role="status">Gerade keine Verbindung zum Zuhause-Server. Ich versuche es weiter.</div>
@@ -77,6 +88,28 @@
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4"/></svg>
         Nachtragen
       </button>
+      <div id="diapers" class="diaper-row" role="group" aria-label="Windel notieren">
+        <button id="btn-diaper-wet" class="diaper-btn" type="button" data-kind="wet" aria-label="Windel nass notieren">
+          <svg class="drop" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3.5C9.6 7 6.5 10.6 6.5 14.3a5.5 5.5 0 0 0 11 0c0-3.7-3.1-7.3-5.5-10.8Z"/></svg><span>Nass</span>
+        </button>
+        <button id="btn-diaper-dirty" class="diaper-btn" type="button" data-kind="dirty" aria-label="Windel voll notieren">
+          <svg class="drop" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3.5C9.6 7 6.5 10.6 6.5 14.3a5.5 5.5 0 0 0 11 0c0-3.7-3.1-7.3-5.5-10.8Z"/></svg><span>Voll</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="meds" class="meds card" aria-labelledby="meds-title" hidden>
+      <div class="card-head">
+        <h2 id="meds-title" class="section-title">Für Mama</h2>
+        <button id="btn-intakes" class="text-link" type="button">Alle Einnahmen</button>
+      </div>
+      <ul id="meds-list" class="med-list"></ul>
+    </section>
+
+    <section id="summary" class="summary card" aria-labelledby="summary-title" hidden>
+      <h2 id="summary-title" class="section-title">Letzte 24 Stunden</h2>
+      <p id="summary-feeds" class="summary-line main"></p>
+      <p id="summary-diapers" class="summary-line" hidden></p>
     </section>
 
     <section class="history" aria-label="Bisher">
@@ -103,10 +136,17 @@
           <button type="button" class="seg side-bottle" data-value="bottle" aria-pressed="false">Flasche</button>
         </div>
       </div>
-      <label class="field">
-        <span class="field-label">Zeitpunkt</span>
-        <input type="datetime-local" name="at" required>
-      </label>
+      <div class="field">
+        <span class="field-label" id="add-at-label">Zeitpunkt</span>
+        <div class="chips" id="add-chips" role="group" aria-label="Schnell zurückstellen">
+          <button type="button" class="chip" data-min="10" aria-pressed="false">vor 10 min</button>
+          <button type="button" class="chip" data-min="20" aria-pressed="false">20 min</button>
+          <button type="button" class="chip" data-min="30" aria-pressed="false">30 min</button>
+          <button type="button" class="chip" data-min="45" aria-pressed="false">45 min</button>
+          <button type="button" class="chip" data-min="60" aria-pressed="false">1 h</button>
+        </div>
+        <input type="datetime-local" name="at" required aria-labelledby="add-at-label">
+      </div>
       <label class="field">
         <span class="field-label">Notiz (optional)</span>
         <input type="text" name="note" maxlength="200" placeholder="z. B. unruhig, kurz">
@@ -164,15 +204,139 @@
         <input type="number" name="interval_minutes" min="30" max="720" step="15" inputmode="numeric" required>
         <span class="hint" id="interval-hint"></span>
       </label>
+
+      <div class="field">
+        <span class="field-label" id="theme-label">Erscheinungsbild</span>
+        <div class="segmented three neutral" id="theme-seg" role="radiogroup" aria-labelledby="theme-label" data-name="theme">
+          <button type="button" class="seg" data-value="system" aria-pressed="false">System</button>
+          <button type="button" class="seg" data-value="light" aria-pressed="false">Hell</button>
+          <button type="button" class="seg" data-value="dark" aria-pressed="false">Dunkel</button>
+        </div>
+      </div>
+      <label class="switch-row field">
+        <span>Nachts dimmen (22–7 Uhr)</span>
+        <input type="checkbox" role="switch" id="night-toggle" class="switch">
+      </label>
+
+      <div class="field" id="med-admin-wrap" hidden>
+        <span class="field-label">Für Mama</span>
+        <ul id="med-admin" class="admin-list"></ul>
+        <button type="button" id="btn-med-add" class="btn ghost link-btn">Hinzufügen</button>
+      </div>
+
       <div class="field">
         <a class="btn ghost link-btn" href="/api/export.csv" download="boobo-export.csv">CSV exportieren</a>
+        <div class="export-more">
+          <a class="text-link" href="/api/export.csv?what=diapers" download="boobo-windeln.csv">Windeln als CSV</a>
+          <a class="text-link" href="/api/export.csv?what=intakes" download="boobo-medikamente.csv">Medikamente als CSV</a>
+        </div>
       </div>
+
+      <details id="install-help" class="install-help field">
+        <summary>Als App auf den Startbildschirm</summary>
+        <h3>iPhone</h3>
+        <ol>
+          <li>Boobo in <strong>Safari</strong> öffnen.</li>
+          <li>Unten auf <strong>Teilen</strong> tippen (Quadrat mit Pfeil).</li>
+          <li><strong>„Zum Home-Bildschirm“</strong> wählen und bestätigen.</li>
+        </ol>
+        <h3>Android</h3>
+        <p class="hint">Chrome kann Apps ohne HTTPS nicht installieren. Darum einmalig:</p>
+        <ol>
+          <li>In Chrome diese Adresse öffnen:
+            <span class="copy-line"><code id="install-flag">chrome://flags/#unsafely-treat-insecure-origin-as-secure</code><button type="button" class="text-link" data-copy="install-flag">Kopieren</button></span>
+          </li>
+          <li>Den Schalter auf <strong>„Enabled“</strong> stellen.</li>
+          <li>Ins Textfeld darüber genau das eintragen:
+            <span class="copy-line"><code id="install-origin">http://…</code><button type="button" class="text-link" data-copy="install-origin">Kopieren</button></span>
+          </li>
+          <li>Chrome ganz beenden und neu öffnen.</li>
+          <li>Boobo öffnen, Menü <strong>⋮</strong> → <strong>„App installieren“</strong>.</li>
+        </ol>
+      </details>
       <p class="meta tagline">Für Bobo. Und für zwei müde, großartige Eltern.</p>
       <p class="meta" id="settings-meta">Boobo</p>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Schließen</button>
         <button type="submit" class="btn primary">Speichern</button>
       </div>
+    </form>
+  </dialog>
+
+  <!-- Rückfrage (wiederverwendbar, siehe askConfirm in app.js) -->
+  <dialog id="dlg-confirm" class="sheet" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text" class="confirm-text"></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" id="confirm-no">Abbrechen</button>
+        <button type="button" class="btn primary" id="confirm-yes">Ja</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Windel bearbeiten -->
+  <dialog id="dlg-diaper" class="sheet">
+    <form method="dialog" id="form-diaper">
+      <h2>Windel</h2>
+      <div class="field">
+        <span class="field-label">Wie war sie?</span>
+        <div class="segmented two neutral" role="radiogroup" data-name="kind">
+          <button type="button" class="seg" data-value="wet" aria-pressed="false">Nass</button>
+          <button type="button" class="seg" data-value="dirty" aria-pressed="false">Voll</button>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Zeitpunkt</span>
+        <input type="datetime-local" name="at" required>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+      <button type="button" class="btn danger-ghost full" id="btn-diaper-delete">Löschen</button>
+    </form>
+  </dialog>
+
+  <!-- Alle Einnahmen -->
+  <dialog id="dlg-intakes" class="sheet">
+    <form method="dialog">
+      <h2>Alle Einnahmen</h2>
+      <div id="intakes-list" class="intakes-list"></div>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost grow" data-close>Schließen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Medikament anlegen / bearbeiten -->
+  <dialog id="dlg-med" class="sheet">
+    <form method="dialog" id="form-med" novalidate>
+      <h2 id="med-dlg-title">Medikament</h2>
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input type="text" name="med_name" maxlength="60" placeholder="z. B. Paracetamol" autocomplete="off">
+      </label>
+      <label class="field">
+        <span class="field-label">Dosis (optional)</span>
+        <input type="text" name="med_dose" maxlength="40" placeholder="z. B. 1 g" autocomplete="off">
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">max. pro Tag</span>
+          <input type="number" name="med_max" min="1" max="24" step="1" inputmode="numeric" placeholder="ohne">
+        </label>
+        <label class="field">
+          <span class="field-label">Abstand in Stunden</span>
+          <input type="text" name="med_gap" inputmode="decimal" placeholder="z. B. 6" autocomplete="off">
+        </label>
+      </div>
+      <p class="hint" id="med-hint"></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+      <button type="button" class="btn danger-ghost full" id="btn-med-delete">Löschen</button>
     </form>
   </dialog>
 

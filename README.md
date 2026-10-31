@@ -10,7 +10,15 @@ ohne Cloud, ohne Abhängigkeiten.
   nächsten Mahlzeit, wird deutlich, wenn Bobo bestimmt schon Hunger hat
 - Vorschlag für die nächste Seite
 - Vier große Buttons, Ein-Tipp-Erfassung mit „Rückgängig“
-- Nachtragen mit manueller Uhrzeit, Einträge ändern und löschen
+- Doppelschutz: Tippen beide Eltern fast gleichzeitig (oder zweimal), fragt Boobo nach
+  („Um 14:32 schon notiert. Trotzdem eintragen?“), statt doppelt zu speichern
+- Nachtragen mit manueller Uhrzeit und Schnellzeiten („vor 10 min“ bis „1 h“); langes Drücken auf einen
+  Seiten-Button öffnet Nachtragen direkt mit dieser Seite. Einträge ändern und löschen
+- Windeln: „Nass“ und „Voll“ mit einem Tipp, im Verlauf zwischen den Mahlzeiten
+- Tagesbilanz „Letzte 24 Stunden“: wie oft gestillt, längste Pause, Windeln
+- Medikamente für Mama: Paracetamol, Ibuprofen & Co. mit Mindestabstand und Tageshöchstzahl, „Wieder ab 16:30“
+  auf einen Blick, Erinnerung per Home Assistant
+- Nachtmodus: Erscheinungsbild System/Hell/Dunkel und automatisches Dimmen zwischen 22 und 7 Uhr
 - Verlauf nach Tagen gruppiert, mit Abständen zwischen den Mahlzeiten
 - Beide Handys synchron (automatische Aktualisierung alle 30 s)
 - Dunkles, nachttaugliches Design, als PWA auf den Home-Bildschirm legbar
@@ -53,23 +61,45 @@ git clone https://github.com/killlian24/boobo && cd boobo
 docker compose up -d --build
 ```
 
-### App öffnen und auf den Home-Bildschirm legen
+### App öffnen und auf den Startbildschirm legen
 
-Im Heimnetz: **`http://NAS-IP:8099`** (IP des NAS einsetzen, z. B. `http://192.168.1.20:8099`).
+Im Heimnetz: **`http://NAS-IP:8099`** (IP des NAS einsetzen, z. B. `http://192.168.0.124:8099`).
 Tipp: dem NAS im Router eine feste IP geben.
 
-- **iPhone (Safari):** Seite öffnen → Teilen-Symbol → **„Zum Home-Bildschirm“** → Hinzufügen
-- **Android (Chrome):** Seite öffnen → Menü (⋮) → **„Zum Startbildschirm hinzufügen“** bzw. **„App installieren“**
+**iPhone (Safari):** Seite öffnen → Teilen-Symbol → **„Zum Home-Bildschirm“** → Hinzufügen. Fertig, das
+klappt auch ohne HTTPS.
 
-Boobo läuft bewusst nur per HTTP im LAN (kein HTTPS, kein Reverse Proxy). Dadurch gibt es keinen
-Offline-Cache (Service Worker brauchen HTTPS) – alles andere, inklusive Vollbild-Icon auf dem
-Home-Bildschirm, funktioniert.
+**Android (Chrome):** Chrome erlaubt installierbare Apps nur über HTTPS. Über `http://NAS-IP:8099` bietet das Menü (⋮)
+deshalb nur **„Verknüpfung erstellen“** an (bzw. „Diese App kann nicht installiert werden“); iOS prüft das nicht. Es geht
+trotzdem, ohne Zertifikate, mit einem einmaligen Handgriff pro Handy:
+
+1. In Chrome `chrome://flags/#unsafely-treat-insecure-origin-as-secure` öffnen.
+2. Die Einstellung auf **„Enabled“** stellen.
+3. Im Textfeld darunter die Adresse von Boobo eintragen, z. B. `http://192.168.0.124:8099` (genau so, mit `http://`
+   und Port, ohne Schrägstrich am Ende).
+4. Unten auf **„Relaunch“** tippen, damit Chrome komplett neu startet.
+5. Boobo öffnen → Menü (⋮) → **„App installieren“**.
+
+Die App zeigt dieselbe Anleitung auch selbst: Einstellungen → „Als App auf den Startbildschirm“, mit der richtigen Adresse
+zum Kopieren.
+
+Einordnung: Das Flag sagt Chrome nur, dass genau diese eine Adresse wie eine sichere Seite behandelt werden darf. Andere
+Webseiten sind nicht betroffen, und im eigenen Heimnetz ist das unbedenklich. Wechselt die NAS-IP, muss die neue Adresse
+eingetragen werden.
+
+Sauberere Alternative für später: Boobo hinter einem HTTPS-Reverse-Proxy betreiben (z. B. Nginx Proxy Manager oder Caddy)
+oder per Tailscale erreichbar machen. Dann ist kein Flag nötig, Chrome installiert die App normal, und der
+Offline-Cache (Service Worker) funktioniert ebenfalls.
+
+Ohne HTTPS gibt es keinen Offline-Cache (Service Worker brauchen einen sicheren Kontext); alles andere, inklusive
+Vollbild-Icon auf dem Startbildschirm, funktioniert.
 
 ## Home Assistant
 
 Boobo liefert unter `GET /api/state` den aktuellen Stand als JSON. Im Ordner [`homeassistant/`](homeassistant/)
 liegen fertige REST-Sensoren, Template-Entitäten, eine Automation „Bobo hat bald Hunger“ (Benachrichtigung an beide
-Handys nach 3 h) und eine Dashboard-Karte. Schritt-für-Schritt-Anleitung: [`homeassistant/README.md`](homeassistant/README.md).
+Handys nach 3 h), eine Erinnerung „Kurz an dich denken“ für Mamas Medikamente, Skripte zum Notieren
+(Stillen, Windeln, Medikamente) und eine Dashboard-Karte. Schritt-für-Schritt-Anleitung: [`homeassistant/README.md`](homeassistant/README.md).
 
 ## Konfiguration
 
@@ -80,6 +110,7 @@ Umgebungsvariablen (in `docker-compose.yml` unter `environment:` setzen):
 | `PORT` | `8099` | HTTP-Port im Container |
 | `DATA_DIR` | `/data` (Image) / `./data` (lokal) | Ablageort der SQLite-Datei `boobo.db` |
 | `FEED_INTERVAL_MINUTES` | `180` | Stillintervall in Minuten beim **ersten Start**; danach gilt der Wert aus den App-Einstellungen |
+| `FEED_DUPLICATE_MINUTES` | `10` | Zeitfenster des Doppelschutzes in Minuten |
 | `TZ` | `Europe/Berlin` | Zeitzone für Logging und den Tageszähler („heute“) |
 
 Alle Zeiten in der API sind ISO-8601 in UTC; die Oberfläche zeigt lokale Zeit.
@@ -115,8 +146,21 @@ beschrieben. Kurzüberblick:
 | `GET` | `/api/state` | Aktueller Stand (für Startseite und Home Assistant) |
 | `GET`/`POST` | `/api/feeds` | Verlauf lesen / Stillen eintragen |
 | `PATCH`/`DELETE` | `/api/feeds/:id` | Eintrag ändern / löschen |
+| `GET`/`POST` | `/api/diapers` | Windeln lesen / eintragen (`kind`: `wet` \| `dirty`) |
+| `PATCH`/`DELETE` | `/api/diapers/:id` | Windel ändern / löschen |
+| `GET`/`POST` | `/api/medications` | Medikamente mit Status lesen / anlegen |
+| `PATCH`/`DELETE` | `/api/medications/:id` | Medikament ändern (z. B. pausieren) / löschen |
+| `POST` | `/api/medications/:id/intakes` | Einnahme notieren |
+| `GET` | `/api/med-intakes` | Einnahmen lesen |
+| `DELETE` | `/api/med-intakes/:id` | Einnahme löschen |
 | `GET`/`PUT` | `/api/settings` | Intervall lesen / setzen |
-| `GET` | `/api/export.csv` | CSV-Export |
+| `GET` | `/api/export.csv` | CSV-Export (`?what=diapers` oder `?what=intakes` für Windeln bzw. Medikamente) |
+
+Neu in `GET /api/state`: `summary_24h` (Tagesbilanz), `medications` und `medications_due`. `POST /api/feeds` und
+`POST /api/medications/:id/intakes` kennen `on_duplicate` (`ask`, `force`, `skip`): Liegt schon ein Eintrag weniger als
+10 Minuten entfernt (`FEED_DUPLICATE_MINUTES`), antwortet der Server bei `ask` mit `409`, bei `skip` mit
+`200 { "skipped": true, "existing": … }`, bei `force` speichert er trotzdem. Details in
+[`docs/API.md`](docs/API.md) („Erweiterung 2“).
 
 ## Lizenz
 

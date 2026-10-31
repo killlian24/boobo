@@ -3,11 +3,12 @@
 # Einbinden in configuration.yaml:
 #   script: !include homeassistant/scripts.yaml
 # (Nutzt du den Skript-Editor der UI, liegt dort schon `script: !include scripts.yaml`;
-#  dann die vier Blöcke unten in diese Datei kopieren.)
+#  dann die Blöcke unten in diese Datei kopieren.)
 # Voraussetzung: rest_commands.yaml ist eingebunden.
 #
 # Danach gibt es: script.boobo_vorschlag, script.boobo_links, script.boobo_rechts,
-# script.boobo_beide, script.boobo_flasche, script.boobo_rueckgaengig.
+# script.boobo_beide, script.boobo_flasche, script.boobo_rueckgaengig,
+# script.boobo_windel_nass, script.boobo_windel_voll und script.boobo_medikament_genommen.
 
 boobo_vorschlag:
   alias: "Boobo: Stillen notieren (Seite, die dran ist)"
@@ -72,27 +73,46 @@ boobo_notieren:
         side: "{{ side }}"
         note: "{{ note | default('') }}"
       response_variable: antwort
-    - action: input_text.set_value
-      target:
-        entity_id: input_text.boobo_letzter_eintrag
-      data:
-        value: "{{ antwort.content.feed.id if antwort is defined and antwort.content is defined else '' }}"
-      continue_on_error: true
-    # Sensoren nicht erst in 60 s, sondern sofort nachziehen
-    - action: homeassistant.update_entity
-      target:
-        entity_id: sensor.boobo_status
-      continue_on_error: true
-    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
-      data:
-        title: "Notiert"
-        message: >-
-          {% set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} %}
-          {{ m.get(side, side) }}, {{ now().strftime('%H:%M') }}. Ihr macht das toll.
-        data:
-          tag: boobo-notiert
-          channel: Boobo
-      continue_on_error: true
+    # Doppelschutz: Hat der Server nichts gespeichert, weil vor Kurzem schon notiert wurde
+    # (`skipped: true`), sagen wir das freundlich und lassen alles andere in Ruhe.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ antwort is defined and antwort.content is defined
+                   and antwort.content.skipped | default(false) == true }}
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Boobo"
+                message: >-
+                  Schon notiert, um {{ antwort.content.existing.at | as_timestamp | timestamp_custom('%H:%M') }}.
+                data:
+                  tag: boobo-notiert
+                  channel: Boobo
+              continue_on_error: true
+      default:
+        - action: input_text.set_value
+          target:
+            entity_id: input_text.boobo_letzter_eintrag
+          data:
+            value: "{{ antwort.content.feed.id if antwort is defined and antwort.content is defined else '' }}"
+          continue_on_error: true
+        # Sensoren nicht erst in 60 s, sondern sofort nachziehen
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.boobo_status
+          continue_on_error: true
+        - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+          data:
+            title: "Notiert"
+            message: >-
+              {% set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} %}
+              {{ m.get(side, side) }}, {{ now().strftime('%H:%M') }}. Ihr macht das toll.
+            data:
+              tag: boobo-notiert
+              channel: Boobo
+          continue_on_error: true
 
 boobo_rueckgaengig:
   alias: "Boobo: letzten Eintrag rückgängig"
@@ -114,3 +134,102 @@ boobo_rueckgaengig:
       target:
         entity_id: sensor.boobo_status
       continue_on_error: true
+
+# Windeln: ein Tastendruck, ein Eintrag. Kein Doppelschutz, zwei Windeln kurz nacheinander sind real.
+# „Rückgängig“ gibt es hier nicht – in der App den Eintrag antippen und löschen.
+boobo_windel_nass:
+  alias: "Boobo: Windel nass notieren"
+  icon: mdi:water
+  mode: queued
+  sequence:
+    - action: rest_command.boobo_windel
+      data: { kind: wet }
+      continue_on_error: true
+    - action: homeassistant.update_entity
+      target:
+        entity_id: sensor.boobo_status
+      continue_on_error: true
+    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+      data:
+        title: "Nass, {{ now().strftime('%H:%M') }}. Notiert."
+        message: "Alles im Fluss."
+        data:
+          tag: boobo-windel
+          channel: Boobo
+      continue_on_error: true
+
+boobo_windel_voll:
+  alias: "Boobo: Windel voll notieren"
+  icon: mdi:emoticon-poop
+  mode: queued
+  sequence:
+    - action: rest_command.boobo_windel
+      data: { kind: dirty }
+      continue_on_error: true
+    - action: homeassistant.update_entity
+      target:
+        entity_id: sensor.boobo_status
+      continue_on_error: true
+    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+      data:
+        title: "Voll, {{ now().strftime('%H:%M') }}. Notiert."
+        message: "Volle Leistung, Bobo."
+        data:
+          tag: boobo-windel
+          channel: Boobo
+      continue_on_error: true
+
+# Medikament für Mama als genommen notieren.
+# Aufruf mit der ID aus GET /api/medications:
+#   action: script.boobo_medikament_genommen
+#   data:
+#     medication_id: 1
+boobo_medikament_genommen:
+  alias: "Boobo: Medikament genommen"
+  description: "Notiert eine Einnahme für Mama (Doppelschutz: innerhalb von 10 min wird nichts doppelt gespeichert)."
+  icon: mdi:pill
+  mode: queued
+  fields:
+    medication_id:
+      description: "ID des Medikaments, siehe http://NAS-IP:8099/api/medications"
+      example: 1
+  sequence:
+    - action: rest_command.boobo_medikament
+      data:
+        medication_id: "{{ medication_id }}"
+      response_variable: antwort
+    # Name für die Meldung: aus der Antwort, sonst aus den Attributen von sensor.boobo_status
+    - variables:
+        name: >-
+          {% set a = antwort.content if antwort is defined and antwort.content is defined else {} %}
+          {% set aus_liste = (state_attr('sensor.boobo_status', 'medications') or [])
+               | selectattr('id', 'eq', medication_id | int(0)) | map(attribute='name') | first | default('') %}
+          {{ (a.medication.name if a.medication is defined and a.medication else '') or aus_liste or 'Medikament' }}
+        skipped: "{{ antwort is defined and antwort.content is defined and antwort.content.skipped | default(false) == true }}"
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ skipped }}"
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Schon notiert"
+                message: >-
+                  {{ name }}, um {{ antwort.content.existing.at | as_timestamp | timestamp_custom('%H:%M') }}.
+                data:
+                  tag: boobo-medikament
+                  channel: Boobo
+              continue_on_error: true
+      default:
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.boobo_status
+          continue_on_error: true
+        - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+          data:
+            title: "{{ name }}, {{ now().strftime('%H:%M') }}. Notiert."
+            message: "Gut auf dich aufgepasst."
+            data:
+              tag: boobo-medikament
+              channel: Boobo
+          continue_on_error: true

@@ -23,7 +23,7 @@ mode: single
 
 triggers:
   - trigger: state
-    entity_id: binary_sensor.boobo_ueberfaellig
+    entity_id: binary_sensor.boobo_bobo_hat_hunger
     to: "on"
     for:
       minutes: 1

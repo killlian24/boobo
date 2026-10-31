@@ -3,7 +3,7 @@
 # Einbinden in configuration.yaml:
 #   template: !include homeassistant/template.yaml
 # Voraussetzung: rest_sensors.yaml ist eingebunden (liefert sensor.boobo_status
-# mit den Attributen overdue, suggested_side, today_count, …).
+# mit den Attributen overdue, suggested_side, today_count, summary_24h, medications_due, …).
 
 - binary_sensor:
     - name: "Boobo Bobo hat Hunger"
@@ -11,6 +11,14 @@
       icon: mdi:baby-bottle-outline
       availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable', 'keine Daten'] }}"
       state: "{{ state_attr('sensor.boobo_status', 'overdue') == true }}"
+
+    # Für Mama: geht mindestens ein Medikament gerade wieder? (Erste Einnahme wird nie erinnert,
+    # nach 36 h ohne Einnahme gilt das Mittel als abgesetzt – das regelt der Server.)
+    - name: "Boobo Mama Medikament"
+      unique_id: boobo_medikament
+      icon: mdi:pill
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+      state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | length > 0 }}"
 
   sensor:
     - name: "Boobo Vorschlag Seite"
@@ -28,9 +36,24 @@
       availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
       state: "{{ state_attr('sensor.boobo_status', 'today_count') | int(0) }}"
 
-    - name: "Boobo letzte 24 h"
+    - name: "Boobo letzte 24h"
       unique_id: boobo_letzte_24h
       icon: mdi:counter
       unit_of_measurement: "Mahlzeiten"
       availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
       state: "{{ state_attr('sensor.boobo_status', 'last_24h_count') | int(0) }}"
+
+    # Welche Medikamente gehen gerade wieder, z. B. „Paracetamol 1 g, Ibuprofen 400 mg“
+    - name: "Boobo Mama Medikament Text"
+      unique_id: boobo_medikament_text
+      icon: mdi:pill
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+      state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | join(', ') }}"
+
+    - name: "Boobo Stillen 24h"
+      unique_id: boobo_stillen_24h
+      icon: mdi:baby-bottle-outline
+      unit_of_measurement: "Mal"
+      state_class: measurement
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] and state_attr('sensor.boobo_status', 'summary_24h') is mapping }}"
+      state: "{{ state_attr('sensor.boobo_status', 'summary_24h').feeds | int(0) }}"

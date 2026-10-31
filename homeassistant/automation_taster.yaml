@@ -8,6 +8,10 @@
 # → „Gerät“ → deinen Taster wählen → „… wurde gedrückt“, dann in YAML wechseln.
 #
 # Belegung: 1× drücken = Seite, die dran ist · 2× = Flasche · lang = Rückgängig
+#
+# Doppelschutz: Tippt jemand innerhalb von 10 min nach einem Eintrag noch einmal (zweiter Taster,
+# versehentlicher Doppeldruck, anderes Handy war schneller), speichert der Server nichts doppelt.
+# Home Assistant bekommt dann „Schon notiert, um HH:MM.“ als Benachrichtigung zurück.
 
 alias: "Boobo: Taster"
 description: "Ein Druck notiert die Seite, die dran ist. Doppelt = Flasche, lang = Rückgängig."

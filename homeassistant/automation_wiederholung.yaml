@@ -15,7 +15,7 @@ triggers:
 
 conditions:
   - condition: state
-    entity_id: binary_sensor.boobo_ueberfaellig
+    entity_id: binary_sensor.boobo_bobo_hat_hunger
     state: "on"
     for:
       minutes: 30

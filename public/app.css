@@ -24,6 +24,7 @@
   --tint-r: #FCF0DF;
   --tint-b: #EFE9F8;
   --tint-f: #E3F4F1;
+  --tint-n: #F5ECE1;            /* neutrale warme Fläche (z. B. Medikament „geht jetzt“) */
 
   --toast: #1E1917;
   --toast-text: #F5EFE6;
@@ -41,8 +42,10 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, "Segoe UI", system-ui, sans-serif;
 }
 
+/* Dunkle Tokens: einmal für „System“ (kein data-theme oder data-theme≠light) … */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #1E1917;
     --surface: #2A2422;
     --line: #3A3330;
@@ -58,6 +61,7 @@
     --tint-r: #3B2F24;
     --tint-b: #332B3E;
     --tint-f: #243635;
+    --tint-n: #362E2A;
 
     --toast: #F5EFE6;
     --toast-text: #1E1917;
@@ -67,6 +71,70 @@
     --shadow: none;
     --scrim: rgba(0, 0, 0, 0.55);
   }
+}
+
+/* … und einmal für „Dunkel“ (Einstellungen → Erscheinungsbild). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1E1917;
+  --surface: #2A2422;
+  --line: #3A3330;
+  --text: #F5EFE6;
+  --text-2: #A69E94;
+
+  --ink-l: #E890A8;
+  --ink-r: #E8A95E;
+  --ink-b: #B49CDD;
+  --ink-f: #5EC4B6;
+
+  --tint-l: #3A2A2E;
+  --tint-r: #3B2F24;
+  --tint-b: #332B3E;
+  --tint-f: #243635;
+  --tint-n: #362E2A;
+
+  --toast: #F5EFE6;
+  --toast-text: #1E1917;
+  --toast-text-2: #6B645C;
+  --toast-action: #B5405E;
+
+  --shadow: none;
+  --scrim: rgba(0, 0, 0, 0.55);
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+/* Nachtmodus 22–7 Uhr (html.night, per JS): erzwingt dunkel, gedämpft, weniger Kontrast, entsättigte Seiten. */
+:root.night {
+  color-scheme: dark;
+  --bg: #141110;
+  --surface: #1E1917;
+  --line: #2C2624;
+  --text: #D9D2C8;
+  --text-2: #8E867C;
+
+  --side-l: #C98E9D;
+  --side-r: #C9A277;
+  --side-b: #A396BF;
+  --side-f: #6FAAA2;
+
+  --ink-l: #C98E9D;
+  --ink-r: #C9A277;
+  --ink-b: #A396BF;
+  --ink-f: #6FAAA2;
+
+  --tint-l: #2A2023;
+  --tint-r: #2A241D;
+  --tint-b: #25212C;
+  --tint-f: #1C2726;
+  --tint-n: #262019;
+
+  --toast: #2C2624;
+  --toast-text: #D9D2C8;
+  --toast-text-2: #8E867C;
+  --toast-action: #C98E9D;
+
+  --shadow: none;
+  --scrim: rgba(0, 0, 0, 0.6);
 }
 
 /* Seitenfarben als lokale Variablen: jedes Element mit .side-x bekommt Fläche, Tinte und Tint seiner Seite. */
@@ -305,6 +373,10 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   gap: 8px;
   padding: 0 8px;
   transition: transform 120ms ease, background-color 120ms ease, border-color 0.2s, opacity 0.2s;
+  /* Langes Drücken öffnet Nachtragen: kein Kontextmenü, keine Textauswahl */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .feed-btn:active { transform: scale(0.97); background: var(--line); border-color: var(--line); }
 .feed-btn:disabled { opacity: 0.55; cursor: default; }
@@ -580,6 +652,288 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 }
 .confirm p { margin: 0 0 10px; font-weight: 600; }
 
+/* ---------- Erweiterung 2 ---------- */
+
+/* Windeln: dezenter als die Still-Buttons */
+.diaper-row {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.diaper-btn {
+  height: 56px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 120ms ease, background-color 120ms ease, opacity 0.2s;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.diaper-btn .drop { color: var(--text-2); flex: 0 0 auto; }
+.diaper-btn:active { transform: scale(0.97); background: var(--line); }
+.diaper-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* Karten unter den Buttons */
+.meds, .summary { margin-top: 24px; padding: 16px 20px; }
+.meds + .summary { margin-top: 12px; }
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin: -8px 0 0;
+}
+.text-link {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline-flex;
+  align-items: center;
+}
+.text-link:active { color: var(--text); }
+
+/* Für Mama */
+.med-list { list-style: none; margin: 0; padding: 0; }
+.med-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin: 0 -12px;
+  border-top: 1px solid var(--line);
+  border-radius: var(--r-xs);
+}
+.med-row.due { background: var(--tint-n); border-top-color: transparent; }
+.med-row.due + .med-row { border-top-color: transparent; }
+.med-info { flex: 1 1 auto; min-width: 0; }
+.med-name {
+  font-size: 1.0625rem;
+  line-height: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.med-dose { color: var(--text-2); font-weight: 400; }
+.med-status {
+  font-size: 0.8125rem;
+  line-height: 18px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.med-row.due .med-status { color: var(--text); font-weight: 600; }
+.med-take {
+  flex: 0 0 auto;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: transform 120ms ease, opacity 0.2s;
+}
+.med-row.due .med-take { background: var(--surface); border-color: var(--text-2); }
+.med-take:active { transform: scale(0.97); }
+.med-take:disabled { opacity: 0.55; cursor: default; }
+
+/* Letzte 24 Stunden */
+.summary-line {
+  margin: 6px 0 0;
+  font-size: 0.9375rem;
+  line-height: 20px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.summary-line.main { margin-top: 8px; color: var(--text); font-weight: 600; }
+
+/* Verlauf: Windel-Zeile */
+.row-diaper .dot { background: var(--line); color: var(--text-2); }
+
+/* Schnellzeiten im Nachtragen */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chip {
+  flex: 1 1 auto;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: transform 120ms ease;
+}
+.chip:active { transform: scale(0.97); }
+.chip[aria-pressed="true"] { border-color: var(--text); background: var(--surface); }
+
+/* Rückfrage */
+.confirm-text { margin: -6px 0 16px; color: var(--text-2); font-size: 0.9375rem; line-height: 20px; }
+#dlg-confirm h2 { line-height: 1.25; }
+
+/* Segmente ohne Seitenfarbe (Erscheinungsbild, Windel-Art) */
+.segmented.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.segmented.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.segmented.neutral .seg[aria-pressed="true"] {
+  background: var(--surface);
+  border-color: var(--text);
+  color: var(--text);
+}
+
+/* Schalter */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.switch {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  position: relative;
+  width: 52px;
+  height: 32px;
+  margin: 6px 0;
+  border-radius: 16px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+.switch:checked { background: var(--text); }
+.switch:checked::after { transform: translateX(20px); background: var(--bg); }
+.switch:focus-visible { outline: 3px solid var(--ink-r); outline-offset: 2px; }
+
+/* Verwaltung Medikamente in den Einstellungen */
+.admin-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+.admin-row:last-child { border-bottom: 1px solid var(--line); }
+.admin-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.admin-main:active { background: var(--bg); }
+.admin-name { font-weight: 600; overflow-wrap: anywhere; max-width: 100%; }
+.admin-sub { font-size: 0.8125rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.admin-row.paused .admin-name { color: var(--text-2); }
+.pause-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.field-row .field { margin-bottom: 0; }
+#med-hint { margin: 8px 0 12px; }
+
+/* Alle Einnahmen */
+.intakes-list { margin-bottom: 8px; }
+.intakes-list .day-head { margin-top: 8px; }
+.intake-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  border-top: 1px solid var(--line);
+}
+.intake-row .time { flex: 0 0 56px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.intake-row .body { flex: 1 1 auto; min-width: 0; font-size: 0.9375rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intake-row .icon-btn { margin-right: -10px; color: var(--ink-l); }
+.btn.grow { flex: 1 1 auto; }
+
+/* Export, Startbildschirm-Hilfe */
+.export-more { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.install-help {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+.install-help summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.install-help summary::-webkit-details-marker { display: none; }
+.install-help summary::after { content: "+"; margin-left: auto; color: var(--text-2); font-size: 1.25rem; font-weight: 400; }
+.install-help[open] summary::after { content: "–"; }
+.install-help h3 { margin: 8px 0 4px; font-size: 0.8125rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); }
+.install-help ol { margin: 0 0 12px; padding-left: 1.25em; }
+.install-help li { margin: 4px 0; }
+.install-help .hint { margin: 0 0 4px; }
+.copy-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; margin-top: 4px; }
+.install-help code {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.8125rem;
+  word-break: break-all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+
 @media (max-width: 340px) {
   .ring-wrap { flex-basis: 100px; width: 100px; height: 100px; }
   .status-time { font-size: 1.5rem; }
@@ -588,5 +942,5 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
-  .pressable:active, .feed-btn:active, .btn:active { transform: none; }
+  .pressable:active, .feed-btn:active, .btn:active, .diaper-btn:active, .chip:active { transform: none; }
 }

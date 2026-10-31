@@ -36,6 +36,9 @@
         - next_due_at
         - last
         - now
+        - summary_24h
+        - medications
+        - medications_due
 
     - name: "Boobo Minuten seit Stillen"
       unique_id: boobo_minuten_seit_stillen
@@ -59,7 +62,7 @@
       availability: "{{ value_json.last is not none }}"
       value_template: "{{ value_json.last.at if value_json.last is not none else none }}"
 
-    - name: "Boobo nächste Mahlzeit etwa um"
+    - name: "Boobo Bobo meldet sich gegen"
       unique_id: boobo_naechste_faellig
       icon: mdi:alarm
       device_class: timestamp
@@ -67,8 +70,33 @@
       value_template: "{{ value_json.next_due_at }}"
 
     # Die rest-Integration kennt keine binary_sensor-Plattform – daher hier als Text,
-    # der echte binary_sensor.boobo_ueberfaellig steht in template.yaml.
-    - name: "Boobo Hunger (Text)"
+    # der echte binary_sensor.boobo_bobo_hat_hunger steht in template.yaml.
+    - name: "Boobo Hunger Text"
       unique_id: boobo_ueberfaellig_text
       icon: mdi:alert-circle-outline
       value_template: "{{ 'Ja' if value_json.overdue else 'Nein' }}"
+
+    # Tagesbilanz (rollierend, letzte 24 Stunden) aus summary_24h
+    - name: "Boobo Pause maximal 24h"
+      unique_id: boobo_laengste_pause
+      icon: mdi:sleep
+      unit_of_measurement: "min"
+      state_class: measurement
+      availability: "{{ value_json.summary_24h is defined and value_json.summary_24h.longest_gap_minutes is not none }}"
+      value_template: "{{ value_json.summary_24h.longest_gap_minutes }}"
+
+    - name: "Boobo Windeln nass 24h"
+      unique_id: boobo_windeln_nass_24h
+      icon: mdi:water
+      unit_of_measurement: "Windeln"
+      state_class: measurement
+      availability: "{{ value_json.summary_24h is defined }}"
+      value_template: "{{ value_json.summary_24h.diapers_wet | int(0) }}"
+
+    - name: "Boobo Windeln voll 24h"
+      unique_id: boobo_windeln_voll_24h
+      icon: mdi:emoticon-poop
+      unit_of_measurement: "Windeln"
+      state_class: measurement
+      availability: "{{ value_json.summary_24h is defined }}"
+      value_template: "{{ value_json.summary_24h.diapers_dirty | int(0) }}"

@@ -2,11 +2,14 @@
 #
 # Einfügen: Dashboard → Bearbeiten (Stift) → „Karte hinzufügen“ → ganz unten
 # „Manuell“ → Inhalt einfügen → Speichern. NAS-IP ersetzen.
+#
+# Die Entity-IDs unten entstehen aus den Namen in rest_sensors.yaml und template.yaml
+# (Tabelle „Name → Entity-ID“ in homeassistant/README.md).
 
 type: vertical-stack
 cards:
   - type: tile
-    entity: binary_sensor.boobo_ueberfaellig
+    entity: binary_sensor.boobo_bobo_hat_hunger
     name: Stillen
     icon: mdi:baby-bottle-outline
     color: red
@@ -28,7 +31,7 @@ cards:
         name: Letzte Seite
       - entity: sensor.boobo_minuten_seit_stillen
         name: Minuten seit Stillen
-      - entity: sensor.boobo_naechste_faellig
+      - entity: sensor.boobo_bobo_meldet_sich_gegen
         name: Bobo meldet sich wohl gegen
         format: time
       - entity: sensor.boobo_vorschlag_seite
@@ -63,6 +66,71 @@ cards:
         tap_action:
           action: perform-action
           perform_action: script.boobo_flasche
+
+  # Windeln
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Nass
+        icon: mdi:water
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_windel_nass
+      - type: button
+        name: Voll
+        icon: mdi:emoticon-poop
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_windel_voll
+
+  - type: entities
+    title: Letzte 24 Stunden
+    entities:
+      - entity: sensor.boobo_stillen_24h
+        name: Gestillt
+      - entity: sensor.boobo_pause_maximal_24h
+        name: Längste Pause
+      - entity: sensor.boobo_windeln_nass_24h
+        name: Windeln nass
+      - entity: sensor.boobo_windeln_voll_24h
+        name: Windeln voll
+
+  - type: entities
+    title: Für Mama
+    entities:
+      - entity: sensor.boobo_mama_medikament_text
+        name: Geht wieder
+
+  # Medikament genommen notieren.
+  # ACHTUNG: Die medication_id (1, 2, 3) stammt aus GET http://NAS-IP:8099/api/medications.
+  # Die Startbefüllung ist 1 = Paracetamol, 2 = Ibuprofen, 3 = Magenschutz. Wurde ein Medikament
+  # gelöscht und neu angelegt, bekommt es eine neue ID – dann hier die Zahl anpassen.
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Paracetamol
+        icon: mdi:pill
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_medikament_genommen
+          data:
+            medication_id: 1
+      - type: button
+        name: Ibuprofen
+        icon: mdi:pill
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_medikament_genommen
+          data:
+            medication_id: 2
+      - type: button
+        name: Magenschutz
+        icon: mdi:pill
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_medikament_genommen
+          data:
+            medication_id: 3
 
   - type: button
     name: Boobo öffnen

@@ -43,3 +43,14 @@ Druckfeedback: `:active` skaliert auf 0.97, 120 ms; bei `prefers-reduced-motion`
 
 Das doppelte o aus „Boobo“: linker Kreis voll, rechter Kreis als Ring, dunkel auf Rosé (#E890A8).
 Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 daraus erzeugt.
+
+## Ergänzung 2: Erscheinungsbild, Nachtmodus, neutraler Tint
+
+- Erscheinungsbild wählbar: System (Default, `prefers-color-scheme`), Hell (`html[data-theme="light"]`),
+  Dunkel (`html[data-theme="dark"]`); Wahl in localStorage `boobo.theme`.
+- Nachtmodus `html.night` (22–7 Uhr Ortszeit, abschaltbar, localStorage `boobo.night`): erzwingt dunkel und dämpft:
+  bg #141110, surface #1E1917, line #2C2624, text #D9D2C8, text-2 #8E867C; Seiten- und Tintenfarben entsättigt
+  (side/ink-l #C98E9D, -r #C9A277, -b #A396BF, -f #6FAAA2; tint-l #2A2023, -r #2A241D, -b #25212C, -f #1C2726);
+  Toast #2C2624 / #D9D2C8.
+- Neuer Token `--tint-n` (neutrale warme Fläche, z. B. Medikament „Geht jetzt“): hell #F5ECE1, dunkel #362E2A, Nacht #262019.
+- Neue Maße: Windel-Buttons 56 hoch, Medikament-Zeile ≥ 64 mit Button „Genommen“ 44 hoch, Chips 36 hoch (Radius 12).

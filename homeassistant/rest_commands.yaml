@@ -10,6 +10,10 @@
 #   data:
 #     side: left        # left | right | both | bottle
 #     note: "per Taster" # optional
+#
+# Doppelschutz: boobo_stillen schickt `on_duplicate: skip`. Gibt es innerhalb von 10 min schon einen
+# Eintrag (z. B. weil das andere Handy gerade getippt hat), speichert der Server nichts doppelt und
+# antwortet mit `skipped: true`. Die Skripte in scripts.yaml melden dann „Schon notiert“.
 
 boobo_stillen:
   url: "http://NAS-IP:8099/api/feeds"
@@ -17,7 +21,7 @@ boobo_stillen:
   content_type: "application/json"
   timeout: 10
   payload: >-
-    {"side": "{{ side }}"{% if note is defined and note %}, "note": "{{ note | replace('"', '') }}"{% endif %}}
+    {"side": "{{ side }}", "on_duplicate": "skip"{% if note is defined and note %}, "note": "{{ note | replace('"', '') }}"{% endif %}}
 
 # Letzten Eintrag wieder löschen (z. B. bei versehentlichem Tastendruck).
 # Braucht die ID aus der Antwort von boobo_stillen (siehe scripts.yaml: script.boobo_rueckgaengig).
@@ -25,3 +29,29 @@ boobo_loeschen:
   url: "http://NAS-IP:8099/api/feeds/{{ feed_id }}"
   method: DELETE
   timeout: 10
+
+# Windel notieren (kein Doppelschutz: zwei Windeln kurz hintereinander kommen vor).
+#   action: rest_command.boobo_windel
+#   data:
+#     kind: wet         # wet | dirty
+boobo_windel:
+  url: "http://NAS-IP:8099/api/diapers"
+  method: POST
+  content_type: "application/json"
+  timeout: 10
+  payload: >-
+    {"kind": "{{ kind }}"}
+
+# Medikament für Mama als genommen notieren. Die medication_id steht in
+#   curl http://NAS-IP:8099/api/medications
+# Mit Doppelschutz: eine Einnahme innerhalb von 10 min nach der letzten wird nicht doppelt gespeichert.
+#   action: rest_command.boobo_medikament
+#   data:
+#     medication_id: 1
+boobo_medikament:
+  url: "http://NAS-IP:8099/api/medications/{{ medication_id }}/intakes"
+  method: POST
+  content_type: "application/json"
+  timeout: 10
+  payload: >-
+    {"on_duplicate": "skip"}

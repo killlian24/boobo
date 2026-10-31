@@ -1,0 +1,56 @@
+# Boobo: Kurz an dich denken (Medikamente für Mama)
+#
+# Einfügen über: Einstellungen → Automatisierungen → „Automatisierung erstellen“
+# → „Neue Automatisierung“ → Menü (⋮) oben rechts → „In YAML bearbeiten“ → Inhalt
+# dieser Datei einfügen → Speichern.
+#
+# Die Erinnerung kommt, wenn ein Medikament wieder genommen werden darf
+# (binary_sensor.boobo_mama_medikament geht auf „on“). Den Mindestabstand, die Höchstzahl pro Tag
+# und die Regel „erste Einnahme wird nie erinnert, nach 36 h ohne Einnahme Ruhe“ entscheidet
+# der Server; hier wird nur noch freundlich Bescheid gesagt.
+#
+# Vorher anpassen:
+#   - notify.notify durch die eigenen Handys ersetzen, z. B. notify.mobile_app_<handy>
+#     (für Mama allein reicht ihr Handy; für beide Eltern eine Notify-Gruppe nutzen).
+#   - NAS-IP durch die IP des NAS ersetzen.
+#
+# Nachtruhe: Zwischen 23:00 und 06:30 gibt es keine Meldung (Condition unten). Zeiten einfach ändern oder
+# die Condition löschen, wenn auch nachts erinnert werden soll. Geht ein Medikament in der Nachtruhe wieder,
+# bleibt der Sensor „on“ – die Meldung kommt dann nicht von selbst nachgeholt; ein Blick in die App
+# (Karte „Für Mama“) oder die optionale Wiederholung unten fängt das auf.
+
+alias: "Boobo: Kurz an dich denken"
+description: "Sagt Mama Bescheid, wenn ein Medikament wieder genommen werden darf (nicht nachts)."
+mode: single
+
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.boobo_mama_medikament
+    to: "on"
+
+  # Optional: Wiederholung alle 60 min, solange noch ein Medikament „geht wieder“ anzeigt.
+  # Zum Aktivieren die drei Zeilen einkommentieren (die Nachtruhe-Condition gilt dann auch hier):
+  # - trigger: time_pattern
+  #   minutes: "0"
+  #   id: wiederholung
+  # Und zusätzlich unter `conditions:` ergänzen, damit die Wiederholung nur läuft, solange es nötig ist:
+  #   - condition: state
+  #     entity_id: binary_sensor.boobo_mama_medikament
+  #     state: "on"
+
+conditions:
+  # Nachtruhe: nur zwischen 06:30 und 23:00 benachrichtigen (after < before = Tagesfenster)
+  - condition: time
+    after: "06:30:00"
+    before: "23:00:00"
+
+actions:
+  - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen
+    data:
+      title: "Kurz an dich denken"
+      message: "{{ states('sensor.boobo_mama_medikament_text') }} geht wieder."
+      data:
+        tag: boobo-mama             # gleiche tag → Benachrichtigung wird ersetzt statt gestapelt
+        channel: Boobo              # Android: eigener Benachrichtigungskanal
+        url: "http://NAS-IP:8099"   # iOS: Tippen öffnet die App
+        clickAction: "http://NAS-IP:8099"  # Android: dito
