@@ -13,10 +13,10 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Zeit ist um | „Überfällig seit 12 min“ | „Bobo hat bestimmt Hunger · seit 12 min“ |
 | Seitenvorschlag | „Als Nächstes: Rechts“ | „Diesmal ist Rechts dran“ |
 | Buttons | Links / Rechts / Beide / Flasche | unverändert |
-| Toast nach Tipp | „Links eingetragen · 14:32“ | „Links, 14:32 – notiert. Ihr macht das toll.“ |
+| Toast nach Tipp | „Links eingetragen · 14:32“ | „Links, 14:32. Notiert.“ + zweite Zeile „Ihr macht das toll.“ |
 | Rückgängig | „Rückgängig“ | „Rückgängig“ |
 | Rückgängig bestätigt | – | „Weg damit, nichts passiert.“ |
-| Leerer Zustand | „Noch kein Eintrag“ | „Noch nichts notiert. Beim ersten Stillen einfach auf eine Seite tippen.“ |
+| Leerer Zustand | „Noch kein Eintrag“ | „Noch nichts notiert. Beim ersten Stillen einfach auf eine Seite tippen.“ Verlauf: „Hier sammelt sich, was war. Bobo gibt den Takt vor.“ |
 | Nachtragen | „Nachtragen“ | „Nachtragen“ |
 | Verlauf-Überschrift | „Verlauf“ | „Bisher“ |
 | Abstand in der Liste | „+2 h 50“ | „2 h 50 später“ |

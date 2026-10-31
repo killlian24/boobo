@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Boobo</title>
   <meta name="description" content="Boobo – minimaler Still-Tracker">
-  <meta name="theme-color" content="#f7efe6" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1d1917" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1E1917" media="(prefers-color-scheme: dark)">
   <meta name="color-scheme" content="light dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -24,7 +24,7 @@
   <header class="topbar">
     <h1 class="brand"><img src="/icon.svg" alt="" width="28" height="28"> Boobo</h1>
     <button id="btn-settings" class="icon-btn" type="button" aria-label="Einstellungen">
-      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
         <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
           d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
         <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
@@ -35,40 +35,46 @@
 
   <main class="app">
     <section id="status" class="status card" aria-live="polite">
-      <div class="ring-wrap">
-        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
-          <circle class="ring-track" cx="60" cy="60" r="52"/>
-          <circle id="ring-progress" class="ring-progress" cx="60" cy="60" r="52"/>
-        </svg>
-        <div class="ring-center">
-          <div id="status-time" class="status-time">–:–</div>
-          <div id="status-side" class="status-side"></div>
+      <div class="status-main">
+        <div class="ring-wrap">
+          <svg class="ring" viewBox="0 0 116 116" aria-hidden="true">
+            <circle class="ring-track" cx="58" cy="58" r="52"/>
+            <circle id="ring-progress" class="ring-progress" cx="58" cy="58" r="52"/>
+            <g class="status-empty-mark" transform="rotate(90 58 58)">
+              <circle cx="44" cy="58" r="12" fill="var(--side-l)"/>
+              <circle cx="72" cy="58" r="12" fill="none" stroke="var(--side-r)" stroke-width="5"/>
+            </g>
+          </svg>
+          <div class="ring-center">
+            <div id="status-time" class="status-time">–:–</div>
+            <div id="status-side" class="status-side"></div>
+          </div>
+        </div>
+        <div class="status-text">
+          <div id="status-rel" class="status-rel">Lade …</div>
+          <div id="status-next" class="status-next"></div>
         </div>
       </div>
-      <div class="status-text">
-        <div id="status-rel" class="status-rel">Lade …</div>
-        <div id="status-next" class="status-next"></div>
-        <div id="status-suggest" class="status-suggest"></div>
-      </div>
+      <div id="status-suggest" class="status-suggest" hidden></div>
     </section>
 
     <section class="actions" aria-label="Stillen eintragen">
       <div class="grid">
         <button class="feed-btn side-left" type="button" data-side="left" aria-label="Links eintragen">
-          <span class="dot">L</span><span class="label">Links</span><span class="badge">Diesmal</span>
+          <span class="dot">L</span><span class="label">Links</span>
         </button>
         <button class="feed-btn side-right" type="button" data-side="right" aria-label="Rechts eintragen">
-          <span class="dot">R</span><span class="label">Rechts</span><span class="badge">Diesmal</span>
+          <span class="dot">R</span><span class="label">Rechts</span>
         </button>
         <button class="feed-btn side-both" type="button" data-side="both" aria-label="Beide eintragen">
-          <span class="dot">B</span><span class="label">Beide</span><span class="badge">Diesmal</span>
+          <span class="dot">B</span><span class="label">Beide</span>
         </button>
         <button class="feed-btn side-bottle" type="button" data-side="bottle" aria-label="Flasche eintragen">
           <span class="dot">F</span><span class="label">Flasche</span>
         </button>
       </div>
       <button id="btn-backfill" class="secondary-btn" type="button">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4"/></svg>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4"/></svg>
         Nachtragen
       </button>
     </section>
@@ -80,7 +86,7 @@
   </main>
 
   <div id="toast" class="toast" hidden role="status">
-    <span id="toast-text"></span>
+    <span class="toast-text"><span id="toast-text" class="toast-title"></span><span id="toast-sub" class="toast-sub" hidden></span></span>
     <button id="toast-action" class="toast-btn" type="button" hidden>Rückgängig</button>
   </div>
 

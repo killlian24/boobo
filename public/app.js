@@ -177,10 +177,11 @@
 
     if (!s.last) {
       box.classList.add('empty');
-      timeEl.textContent = 'Noch nichts notiert';
+      timeEl.textContent = '';
       sideEl.textContent = '';
-      relEl.textContent = 'Beim ersten Stillen einfach unten auf eine Seite tippen.';
+      relEl.textContent = 'Noch nichts notiert';
       nextEl.textContent = '';
+      nextEl.appendChild(el('span', { class: 'line main', text: 'Beim ersten Stillen einfach auf eine Seite tippen.' }));
       ring.style.strokeDashoffset = RING_LEN;
     } else {
       var last = new Date(s.last.at);
@@ -193,31 +194,32 @@
       sideEl.textContent = SIDE_NAMES[s.last.side] || s.last.side;
 
       nextEl.textContent = '';
+      relEl.textContent = relativeSince(last, now);
       if (untilMin < 0) {
         box.classList.add('overdue');
-        relEl.textContent = '';
-        relEl.appendChild(el('span', { class: 'line', text: 'Bobo hat bestimmt Hunger' }));
-        relEl.appendChild(el('span', { class: 'line sub', text: 'seit ' + formatDuration(-untilMin, 'rel') }));
-        nextEl.appendChild(el('span', { class: 'line', text: 'Zuletzt ' + relativeSince(last, now) }));
-        nextEl.appendChild(el('span', { class: 'line', text: 'Die ' + formatDuration(interval, 'rel') + ' sind um' }));
+        nextEl.appendChild(el('span', { class: 'line main', text: 'Bobo hat bestimmt Hunger' }));
+        nextEl.appendChild(el('span', { class: 'line sub', text: 'seit ' + formatDuration(-untilMin, 'rel') }));
       } else {
         if (pct > 0.85) box.classList.add('warn');
-        relEl.textContent = relativeSince(last, now);
-        nextEl.appendChild(el('span', { class: 'line', text: 'Bobo meldet sich wohl gegen ' + fmtTime.format(due) }));
-        nextEl.appendChild(el('span', { class: 'line', text: pct > 0.8 ? 'Bobo wird langsam hungrig' : (pct < 0.5 ? 'Noch Zeit zum Kuscheln' : 'noch etwa ' + formatDuration(untilMin, 'rel')) }));
+        nextEl.appendChild(el('span', { class: 'line main', text: 'Bobo meldet sich wohl gegen ' + fmtTime.format(due) }));
+        nextEl.appendChild(el('span', { class: 'line sub', text: pct > 0.8 ? 'Bobo wird langsam hungrig' : (pct < 0.5 ? 'Noch Zeit zum Kuscheln' : 'noch etwa ' + formatDuration(untilMin, 'rel')) }));
       }
       ring.style.strokeDashoffset = RING_LEN * (1 - pct);
     }
 
+    // Akzentregel: Ring, Vorschlagszeile und hervorgehobener Button tragen die Farbe der Seite, die dran ist.
     var sug = s.suggested_side;
+    box.className = box.className.replace(/\bside-\w+/g, '').trim();
     sugEl.textContent = '';
-    if (sug && sug !== 'bottle') {
-      sugEl.appendChild(document.createTextNode('Diesmal ist '));
-      sugEl.appendChild(el('span', { class: 'chip side-' + sug, text: SIDE_NAMES[sug] }));
-      sugEl.lastChild.style.background = 'var(--' + sug + ')';
-      sugEl.appendChild(document.createTextNode(' dran'));
+    if (sug && sug !== 'bottle' && s.last) {
+      box.classList.add('side-' + sug);
+      sugEl.appendChild(el('span', { class: 'dot', text: SIDE_LETTERS[sug] }));
+      sugEl.appendChild(el('span', { text: 'Diesmal ist ' + SIDE_NAMES[sug] + ' dran' }));
+      sugEl.hidden = false;
+    } else {
+      sugEl.hidden = true;
     }
-    highlightSuggested(sug);
+    highlightSuggested(s.last ? sug : null);
   }
 
   function highlightSuggested(side) {
@@ -231,7 +233,7 @@
     root.textContent = '';
     var feeds = state.feeds;
     if (!feeds.length) {
-      root.appendChild(el('p', { class: 'empty-hint', text: 'Hier erscheint, was ihr notiert habt.' }));
+      root.appendChild(el('p', { class: 'empty-hint', text: 'Hier sammelt sich, was war. Bobo gibt den Takt vor.' }));
       return;
     }
     var now = new Date();
@@ -285,6 +287,8 @@
     var btn = $('#toast-action');
     clearTimeout(toastTimer);
     $('#toast-text').textContent = text;
+    $('#toast-sub').textContent = opts.sub || '';
+    $('#toast-sub').hidden = !opts.sub;
     t.classList.toggle('error', !!opts.error);
     btn.hidden = !opts.action;
     btn.onclick = null;
@@ -322,7 +326,8 @@
       var feed = res && res.feed;
       return refresh().then(function () {
         var when = feed ? fmtTime.format(new Date(feed.at)) : fmtTime.format(new Date());
-        showToast(SIDE_NAMES[side] + ', ' + when + ' – notiert. Ihr macht das toll.', {
+        showToast(SIDE_NAMES[side] + ', ' + when + '. Notiert.', {
+          sub: 'Ihr macht das toll.',
           action: feed ? function () { undoFeed(feed.id); } : null
         });
       });
