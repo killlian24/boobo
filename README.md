@@ -6,7 +6,7 @@ ohne Cloud, ohne Abhängigkeiten.
 
 ## Features
 
-- Große Statusanzeige: wann zuletzt, welche Seite, wie lange her – Fortschrittsanzeige bis zur nächsten
+- Große Statusanzeige: wann zuletzt, welche Seite, wie lange her – Fortschrittsanzeige bis zur
   nächsten Mahlzeit, wird deutlich, wenn Bobo bestimmt schon Hunger hat
 - Vorschlag für die nächste Seite
 - Vier große Buttons, Ein-Tipp-Erfassung mit „Rückgängig“
