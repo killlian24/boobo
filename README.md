@@ -15,7 +15,7 @@ ohne Cloud, ohne Abhängigkeiten.
 - Beide Handys synchron (automatische Aktualisierung alle 30 s)
 - Dunkles, nachttaugliches Design, als PWA auf den Home-Bildschirm legbar
 - Einstellbares Intervall (Standard 3 h), CSV-Export
-- JSON-API für Home Assistant inkl. fertiger Sensoren und Erinnerungs-Automation
+- JSON-API für Home Assistant inkl. fertiger Sensoren, Erinnerungs-Automation und Notieren per Taster/Fernbedienung
 - Node.js 24 + SQLite (`node:sqlite`), **keine npm-Pakete**, eine Datei `server.js`
 
 ## Installation über Portainer (empfohlen)

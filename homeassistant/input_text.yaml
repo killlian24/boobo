@@ -1,0 +1,11 @@
+# Boobo – Helfer für „Rückgängig“ (merkt sich die ID des letzten Eintrags aus HA)
+#
+# Einbinden in configuration.yaml:
+#   input_text: !include homeassistant/input_text.yaml
+# Oder in der UI: Einstellungen → Geräte & Dienste → Helfer → „Helfer erstellen“ → Text,
+# Name „Boobo letzter Eintrag“ (ergibt input_text.boobo_letzter_eintrag).
+
+boobo_letzter_eintrag:
+  name: "Boobo letzter Eintrag"
+  icon: mdi:identifier
+  max: 20

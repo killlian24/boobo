@@ -36,6 +36,34 @@ cards:
       - entity: sensor.boobo_heute_anzahl
         name: Heute
 
+  # Notieren direkt aus dem Dashboard (braucht rest_commands.yaml + scripts.yaml)
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Links
+        icon: mdi:alpha-l-circle
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_links
+      - type: button
+        name: Rechts
+        icon: mdi:alpha-r-circle
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_rechts
+      - type: button
+        name: Beide
+        icon: mdi:alpha-b-circle
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_beide
+      - type: button
+        name: Flasche
+        icon: mdi:baby-bottle
+        tap_action:
+          action: perform-action
+          perform_action: script.boobo_flasche
+
   - type: button
     name: Boobo öffnen
     icon: mdi:open-in-new

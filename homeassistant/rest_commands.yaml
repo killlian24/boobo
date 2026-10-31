@@ -1,0 +1,27 @@
+# Boobo – Stillen aus Home Assistant heraus notieren
+#
+# Einbinden in configuration.yaml:
+#   rest_command: !include homeassistant/rest_commands.yaml
+# (Gibt es schon einen rest_command-Block, die Einträge dort ergänzen.)
+# NAS-IP ersetzen. Danach: Entwicklerwerkzeuge → YAML → „REST-Befehle“ neu laden (oder HA neu starten).
+#
+# Aufruf, z. B. in Skripten/Automationen:
+#   action: rest_command.boobo_stillen
+#   data:
+#     side: left        # left | right | both | bottle
+#     note: "per Taster" # optional
+
+boobo_stillen:
+  url: "http://NAS-IP:8099/api/feeds"
+  method: POST
+  content_type: "application/json"
+  timeout: 10
+  payload: >-
+    {"side": "{{ side }}"{% if note is defined and note %}, "note": "{{ note | replace('"', '') }}"{% endif %}}
+
+# Letzten Eintrag wieder löschen (z. B. bei versehentlichem Tastendruck).
+# Braucht die ID aus der Antwort von boobo_stillen (siehe scripts.yaml: script.boobo_rueckgaengig).
+boobo_loeschen:
+  url: "http://NAS-IP:8099/api/feeds/{{ feed_id }}"
+  method: DELETE
+  timeout: 10

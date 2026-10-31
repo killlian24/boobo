@@ -12,7 +12,11 @@ Dateien in diesem Ordner:
 | `template.yaml` | `binary_sensor.boobo_ueberfaellig`, Vorschlag-Seite, Tageszähler |
 | `automation_erinnerung.yaml` | Automation „Boobo: Bobo hat bald Hunger“ (einmalige Benachrichtigung) |
 | `automation_wiederholung.yaml` | optional: alle 30 min sanft erinnern, solange Bobo noch wartet |
-| `lovelace_card.yaml` | Beispiel-Karte fürs Dashboard |
+| `lovelace_card.yaml` | Beispiel-Karte fürs Dashboard, inkl. Notieren-Buttons |
+| `rest_commands.yaml` | `rest_command.boobo_stillen` / `boobo_loeschen`: Stillen aus HA notieren |
+| `scripts.yaml` | Skripte Links/Rechts/Beide/Flasche, „Seite, die dran ist“, Rückgängig |
+| `input_text.yaml` | Helfer, der die ID des letzten HA-Eintrags für „Rückgängig“ merkt |
+| `automation_taster.yaml` | Beispiel: Zigbee-Taster, 1× = Seite die dran ist, 2× = Flasche, lang = Rückgängig |
 
 
 > **Tipp zur Adresse:** Läuft Home Assistant als Container auf demselben NAS, kannst du statt `NAS-IP:8099`
@@ -111,6 +115,36 @@ Optional:
 Dashboard → Bearbeiten → „Karte hinzufügen“ → „Manuell“ → Inhalt von `lovelace_card.yaml` einfügen.
 Die Karte zeigt letztes Stillen (relativ), Seite, Minuten, voraussichtliche nächste Mahlzeit, Seitenvorschlag, Tageszähler und
 einen Button zur App.
+
+## 6. Stillen aus Home Assistant notieren (Taster, Fernbedienung, Dashboard)
+
+Boobo nimmt Einträge über `POST /api/feeds` entgegen, genau wie der Button in der App. Home Assistant kann
+das über einen `rest_command` auslösen, also auch per Zigbee-Taster am Bett, Fernbedienung oder Dashboard-Button.
+
+1. In `configuration.yaml` ergänzen (NAS-IP in `rest_commands.yaml` ersetzen):
+   ```yaml
+   rest_command: !include homeassistant/rest_commands.yaml
+   script: !include homeassistant/scripts.yaml
+   input_text: !include homeassistant/input_text.yaml
+   ```
+   Gibt es `script:` oder `input_text:` schon (z. B. durch den UI-Editor), die Blöcke aus den Dateien dort
+   hineinkopieren bzw. den Helfer „Boobo letzter Eintrag“ in der UI anlegen.
+2. Konfiguration prüfen, HA neu starten.
+3. Testen: Entwicklerwerkzeuge → Aktionen → `script.boobo_vorschlag` ausführen. In der App erscheint
+   sofort ein Eintrag mit der Notiz „per Taster“, die Sensoren ziehen direkt nach.
+4. Taster anbinden: `automation_taster.yaml` als neue Automation einfügen und den Trigger auf deinen
+   Taster anpassen (am einfachsten in der UI „Auslöser hinzufügen → Gerät“ wählen, dann in YAML wechseln).
+
+Verfügbare Skripte:
+
+| Skript | Wirkung |
+|---|---|
+| `script.boobo_vorschlag` | notiert die Seite, die Boobo gerade vorschlägt (ein Taster reicht) |
+| `script.boobo_links` / `_rechts` / `_beide` / `_flasche` | notiert die jeweilige Seite |
+| `script.boobo_rueckgaengig` | löscht den zuletzt aus HA notierten Eintrag |
+
+Jedes Notieren schickt eine kurze Bestätigung über `notify.notify`; in `scripts.yaml` bei `boobo_notieren`
+den Dienst durch `notify.mobile_app_<handy>` ersetzen oder den Block entfernen.
 
 ## Fehlersuche
 

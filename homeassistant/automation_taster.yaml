@@ -1,0 +1,65 @@
+# Boobo: Stillen per Taster notieren (Beispiel)
+#
+# Einfügen über: Einstellungen → Automatisierungen → „Automatisierung erstellen“
+# → Menü (⋮) → „In YAML bearbeiten“ → Inhalt ersetzen → Speichern.
+#
+# Der Trigger hängt von deinem Taster ab. Unten drei Beispiele; das passende
+# behalten, die anderen löschen. Am einfachsten: in der UI „Auslöser hinzufügen“
+# → „Gerät“ → deinen Taster wählen → „… wurde gedrückt“, dann in YAML wechseln.
+#
+# Belegung: 1× drücken = Seite, die dran ist · 2× = Flasche · lang = Rückgängig
+
+alias: "Boobo: Taster"
+description: "Ein Druck notiert die Seite, die dran ist. Doppelt = Flasche, lang = Rückgängig."
+mode: single
+
+triggers:
+  # Beispiel A: Zigbee-Taster über Zigbee2MQTT (Entität sensor.<name>_action)
+  - trigger: state
+    entity_id: sensor.stilltaster_action
+    to: "single"
+    id: einfach
+  - trigger: state
+    entity_id: sensor.stilltaster_action
+    to: "double"
+    id: doppelt
+  - trigger: state
+    entity_id: sensor.stilltaster_action
+    to: "hold"
+    id: lang
+
+  # Beispiel B: Zigbee-Taster über ZHA (Ereignis)
+  # - trigger: event
+  #   event_type: zha_event
+  #   event_data:
+  #     device_ieee: "00:11:22:33:44:55:66:77"
+  #     command: "single"
+  #   id: einfach
+
+  # Beispiel C: Gerät-Trigger aus der UI (wird von HA erzeugt, device_id anpassen)
+  # - trigger: device
+  #   domain: zha
+  #   device_id: abc123
+  #   type: remote_button_short_press
+  #   subtype: button
+  #   id: einfach
+
+conditions: []
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: einfach
+        sequence:
+          - action: script.boobo_vorschlag
+      - conditions:
+          - condition: trigger
+            id: doppelt
+        sequence:
+          - action: script.boobo_flasche
+      - conditions:
+          - condition: trigger
+            id: lang
+        sequence:
+          - action: script.boobo_rueckgaengig

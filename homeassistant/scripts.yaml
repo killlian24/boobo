@@ -1,0 +1,116 @@
+# Boobo – Skripte zum Notieren aus Home Assistant
+#
+# Einbinden in configuration.yaml:
+#   script: !include homeassistant/scripts.yaml
+# (Nutzt du den Skript-Editor der UI, liegt dort schon `script: !include scripts.yaml`;
+#  dann die vier Blöcke unten in diese Datei kopieren.)
+# Voraussetzung: rest_commands.yaml ist eingebunden.
+#
+# Danach gibt es: script.boobo_vorschlag, script.boobo_links, script.boobo_rechts,
+# script.boobo_beide, script.boobo_flasche, script.boobo_rueckgaengig.
+
+boobo_vorschlag:
+  alias: "Boobo: Stillen notieren (Seite, die dran ist)"
+  description: "Ein Tastendruck notiert die Seite, die Boobo gerade vorschlägt. Für Taster und Fernbedienungen."
+  icon: mdi:baby-bottle-outline
+  mode: single
+  sequence:
+    - variables:
+        side: "{{ state_attr('sensor.boobo_status', 'suggested_side') or 'left' }}"
+    - action: script.boobo_notieren
+      data:
+        side: "{{ side }}"
+        note: "per Taster"
+
+boobo_links:
+  alias: "Boobo: Links notieren"
+  icon: mdi:alpha-l-circle
+  mode: single
+  sequence:
+    - action: script.boobo_notieren
+      data: { side: left }
+
+boobo_rechts:
+  alias: "Boobo: Rechts notieren"
+  icon: mdi:alpha-r-circle
+  mode: single
+  sequence:
+    - action: script.boobo_notieren
+      data: { side: right }
+
+boobo_beide:
+  alias: "Boobo: Beide notieren"
+  icon: mdi:alpha-b-circle
+  mode: single
+  sequence:
+    - action: script.boobo_notieren
+      data: { side: both }
+
+boobo_flasche:
+  alias: "Boobo: Flasche notieren"
+  icon: mdi:baby-bottle
+  mode: single
+  sequence:
+    - action: script.boobo_notieren
+      data: { side: bottle }
+
+# Gemeinsamer Unterbau: notieren, Sensoren sofort aktualisieren, kurze Bestätigung schicken,
+# ID des Eintrags für „Rückgängig“ merken.
+boobo_notieren:
+  alias: "Boobo: notieren (intern)"
+  mode: queued
+  fields:
+    side:
+      description: "left | right | both | bottle"
+      example: left
+    note:
+      description: "optional"
+      example: "per Taster"
+  sequence:
+    - action: rest_command.boobo_stillen
+      data:
+        side: "{{ side }}"
+        note: "{{ note | default('') }}"
+      response_variable: antwort
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.boobo_letzter_eintrag
+      data:
+        value: "{{ antwort.content.feed.id if antwort is defined and antwort.content is defined else '' }}"
+      continue_on_error: true
+    # Sensoren nicht erst in 60 s, sondern sofort nachziehen
+    - action: homeassistant.update_entity
+      target:
+        entity_id: sensor.boobo_status
+      continue_on_error: true
+    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+      data:
+        title: "Notiert"
+        message: >-
+          {% set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} %}
+          {{ m.get(side, side) }}, {{ now().strftime('%H:%M') }}. Ihr macht das toll.
+        data:
+          tag: boobo-notiert
+          channel: Boobo
+      continue_on_error: true
+
+boobo_rueckgaengig:
+  alias: "Boobo: letzten Eintrag rückgängig"
+  description: "Löscht den Eintrag, der zuletzt aus Home Assistant notiert wurde."
+  icon: mdi:undo
+  mode: single
+  sequence:
+    - condition: template
+      value_template: "{{ states('input_text.boobo_letzter_eintrag') | int(0) > 0 }}"
+    - action: rest_command.boobo_loeschen
+      data:
+        feed_id: "{{ states('input_text.boobo_letzter_eintrag') }}"
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.boobo_letzter_eintrag
+      data:
+        value: ""
+    - action: homeassistant.update_entity
+      target:
+        entity_id: sensor.boobo_status
+      continue_on_error: true
