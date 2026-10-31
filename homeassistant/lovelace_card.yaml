@@ -1,0 +1,46 @@
+# Boobo – Beispiel-Karte für ein Dashboard
+#
+# Einfügen: Dashboard → Bearbeiten (Stift) → „Karte hinzufügen“ → ganz unten
+# „Manuell“ → Inhalt einfügen → Speichern. NAS-IP ersetzen.
+
+type: vertical-stack
+cards:
+  - type: tile
+    entity: binary_sensor.boobo_ueberfaellig
+    name: Stillen
+    icon: mdi:baby-bottle-outline
+    color: red
+    state_content:
+      - state
+      - last_changed
+    tap_action:
+      action: url
+      url_path: "http://NAS-IP:8099"
+
+  - type: entities
+    title: Boobo
+    state_color: true
+    entities:
+      - entity: sensor.boobo_letztes_stillen
+        name: Zuletzt gestillt
+        format: relative
+      - entity: sensor.boobo_letzte_seite
+        name: Letzte Seite
+      - entity: sensor.boobo_minuten_seit_stillen
+        name: Minuten seit Stillen
+      - entity: sensor.boobo_naechste_faellig
+        name: Bobo meldet sich wohl gegen
+        format: time
+      - entity: sensor.boobo_vorschlag_seite
+        name: Diesmal ist dran
+      - entity: sensor.boobo_heute_anzahl
+        name: Heute
+
+  - type: button
+    name: Boobo öffnen
+    icon: mdi:open-in-new
+    show_name: true
+    show_icon: true
+    tap_action:
+      action: url
+      url_path: "http://NAS-IP:8099"

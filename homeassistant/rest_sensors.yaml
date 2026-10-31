@@ -1,0 +1,74 @@
+# Boobo – REST-Sensoren für Home Assistant
+#
+# Einbinden in configuration.yaml:
+#   rest: !include homeassistant/rest_sensors.yaml
+# (oder den Inhalt unter einen bestehenden `rest:`-Block hängen – dann die
+#  Einrückung anpassen). Vorher überall NAS-IP durch die IP des NAS ersetzen.
+#
+# Alle Sensoren teilen sich EINEN Abruf von /api/state (alle 60 s).
+# Format der Antwort: siehe docs/API.md im Boobo-Repo.
+
+- resource: "http://NAS-IP:8099/api/state"
+  scan_interval: 60
+  timeout: 10
+  sensor:
+    # Sammel-Sensor: Status als Text, alle übrigen Felder als Attribute.
+    # Die Template-Entitäten in template.yaml lesen diese Attribute aus.
+    - name: "Boobo Status"
+      unique_id: boobo_status
+      icon: mdi:baby-bottle-outline
+      value_template: >-
+        {%- if value_json.last is none -%}
+          keine Daten
+        {%- elif value_json.overdue -%}
+          Bobo hat Hunger
+        {%- else -%}
+          ok
+        {%- endif -%}
+      json_attributes:
+        - overdue
+        - suggested_side
+        - today_count
+        - last_24h_count
+        - interval_minutes
+        - minutes_since_last
+        - minutes_until_due
+        - next_due_at
+        - last
+        - now
+
+    - name: "Boobo Minuten seit Stillen"
+      unique_id: boobo_minuten_seit_stillen
+      icon: mdi:baby-bottle-outline
+      unit_of_measurement: "min"
+      state_class: measurement
+      availability: "{{ value_json.last is not none }}"
+      value_template: "{{ value_json.minutes_since_last }}"
+
+    - name: "Boobo letzte Seite"
+      unique_id: boobo_letzte_seite
+      icon: mdi:human-female-boy
+      value_template: >-
+        {%- set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} -%}
+        {%- if value_json.last is none -%}–{%- else -%}{{ m.get(value_json.last.side, '–') }}{%- endif -%}
+
+    - name: "Boobo letztes Stillen"
+      unique_id: boobo_letztes_stillen
+      icon: mdi:clock-start
+      device_class: timestamp
+      availability: "{{ value_json.last is not none }}"
+      value_template: "{{ value_json.last.at if value_json.last is not none else none }}"
+
+    - name: "Boobo nächste Mahlzeit etwa um"
+      unique_id: boobo_naechste_faellig
+      icon: mdi:alarm
+      device_class: timestamp
+      availability: "{{ value_json.next_due_at is not none }}"
+      value_template: "{{ value_json.next_due_at }}"
+
+    # Die rest-Integration kennt keine binary_sensor-Plattform – daher hier als Text,
+    # der echte binary_sensor.boobo_ueberfaellig steht in template.yaml.
+    - name: "Boobo Hunger (Text)"
+      unique_id: boobo_ueberfaellig_text
+      icon: mdi:alert-circle-outline
+      value_template: "{{ 'Ja' if value_json.overdue else 'Nein' }}"

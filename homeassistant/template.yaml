@@ -1,0 +1,36 @@
+# Boobo – Template-Entitäten für Home Assistant
+#
+# Einbinden in configuration.yaml:
+#   template: !include homeassistant/template.yaml
+# Voraussetzung: rest_sensors.yaml ist eingebunden (liefert sensor.boobo_status
+# mit den Attributen overdue, suggested_side, today_count, …).
+
+- binary_sensor:
+    - name: "Boobo Bobo hat Hunger"
+      unique_id: boobo_ueberfaellig
+      icon: mdi:baby-bottle-outline
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable', 'keine Daten'] }}"
+      state: "{{ state_attr('sensor.boobo_status', 'overdue') == true }}"
+
+  sensor:
+    - name: "Boobo Vorschlag Seite"
+      unique_id: boobo_vorschlag_seite
+      icon: mdi:arrow-decision
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+      state: >-
+        {%- set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} -%}
+        {{ m.get(state_attr('sensor.boobo_status', 'suggested_side'), '–') }}
+
+    - name: "Boobo heute Anzahl"
+      unique_id: boobo_heute_anzahl
+      icon: mdi:counter
+      unit_of_measurement: "Mahlzeiten"
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+      state: "{{ state_attr('sensor.boobo_status', 'today_count') | int(0) }}"
+
+    - name: "Boobo letzte 24 h"
+      unique_id: boobo_letzte_24h
+      icon: mdi:counter
+      unit_of_measurement: "Mahlzeiten"
+      availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+      state: "{{ state_attr('sensor.boobo_status', 'last_24h_count') | int(0) }}"

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Boobo</title>
+  <meta name="description" content="Boobo – minimaler Still-Tracker">
+  <meta name="theme-color" content="#f7efe6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1d1917" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Boobo">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="offline" class="banner" hidden role="status">Gerade keine Verbindung zum Zuhause-Server. Ich versuche es weiter.</div>
+
+  <header class="topbar">
+    <h1 class="brand"><img src="/icon.svg" alt="" width="28" height="28"> Boobo</h1>
+    <button id="btn-settings" class="icon-btn" type="button" aria-label="Einstellungen">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+          d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
+        <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+          d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>
+      </svg>
+    </button>
+  </header>
+
+  <main class="app">
+    <section id="status" class="status card" aria-live="polite">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="52"/>
+          <circle id="ring-progress" class="ring-progress" cx="60" cy="60" r="52"/>
+        </svg>
+        <div class="ring-center">
+          <div id="status-time" class="status-time">–:–</div>
+          <div id="status-side" class="status-side"></div>
+        </div>
+      </div>
+      <div class="status-text">
+        <div id="status-rel" class="status-rel">Lade …</div>
+        <div id="status-next" class="status-next"></div>
+        <div id="status-suggest" class="status-suggest"></div>
+      </div>
+    </section>
+
+    <section class="actions" aria-label="Stillen eintragen">
+      <div class="grid">
+        <button class="feed-btn side-left" type="button" data-side="left" aria-label="Links eintragen">
+          <span class="dot">L</span><span class="label">Links</span><span class="badge">Diesmal</span>
+        </button>
+        <button class="feed-btn side-right" type="button" data-side="right" aria-label="Rechts eintragen">
+          <span class="dot">R</span><span class="label">Rechts</span><span class="badge">Diesmal</span>
+        </button>
+        <button class="feed-btn side-both" type="button" data-side="both" aria-label="Beide eintragen">
+          <span class="dot">B</span><span class="label">Beide</span><span class="badge">Diesmal</span>
+        </button>
+        <button class="feed-btn side-bottle" type="button" data-side="bottle" aria-label="Flasche eintragen">
+          <span class="dot">F</span><span class="label">Flasche</span>
+        </button>
+      </div>
+      <button id="btn-backfill" class="secondary-btn" type="button">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4"/></svg>
+        Nachtragen
+      </button>
+    </section>
+
+    <section class="history" aria-label="Bisher">
+      <h2 class="section-title">Bisher</h2>
+      <div id="history"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden role="status">
+    <span id="toast-text"></span>
+    <button id="toast-action" class="toast-btn" type="button" hidden>Rückgängig</button>
+  </div>
+
+  <!-- Nachtragen -->
+  <dialog id="dlg-add" class="sheet">
+    <form method="dialog" id="form-add">
+      <h2>Nachtragen</h2>
+      <div class="field">
+        <span class="field-label">Seite</span>
+        <div class="segmented" role="radiogroup" data-name="side">
+          <button type="button" class="seg side-left" data-value="left" aria-pressed="false">Links</button>
+          <button type="button" class="seg side-right" data-value="right" aria-pressed="false">Rechts</button>
+          <button type="button" class="seg side-both" data-value="both" aria-pressed="false">Beide</button>
+          <button type="button" class="seg side-bottle" data-value="bottle" aria-pressed="false">Flasche</button>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Zeitpunkt</span>
+        <input type="datetime-local" name="at" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Notiz (optional)</span>
+        <input type="text" name="note" maxlength="200" placeholder="z. B. unruhig, kurz">
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Notieren</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Bearbeiten -->
+  <dialog id="dlg-edit" class="sheet">
+    <form method="dialog" id="form-edit">
+      <h2>Bearbeiten</h2>
+      <input type="hidden" name="id">
+      <div class="field">
+        <span class="field-label">Seite</span>
+        <div class="segmented" role="radiogroup" data-name="side">
+          <button type="button" class="seg side-left" data-value="left" aria-pressed="false">Links</button>
+          <button type="button" class="seg side-right" data-value="right" aria-pressed="false">Rechts</button>
+          <button type="button" class="seg side-both" data-value="both" aria-pressed="false">Beide</button>
+          <button type="button" class="seg side-bottle" data-value="bottle" aria-pressed="false">Flasche</button>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Zeitpunkt</span>
+        <input type="datetime-local" name="at" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Notiz (optional)</span>
+        <input type="text" name="note" maxlength="200">
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+      <button type="button" class="btn danger-ghost full" id="btn-delete">Löschen</button>
+      <div id="confirm-delete" class="confirm" hidden>
+        <p>Wirklich löschen?</p>
+        <div class="dlg-actions">
+          <button type="button" class="btn ghost" id="btn-delete-cancel">Behalten</button>
+          <button type="button" class="btn danger" id="btn-delete-confirm">Ja, löschen</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Einstellungen -->
+  <dialog id="dlg-settings" class="sheet">
+    <form method="dialog" id="form-settings">
+      <h2>Einstellungen</h2>
+      <label class="field">
+        <span class="field-label">Abstand zwischen den Mahlzeiten (Minuten)</span>
+        <input type="number" name="interval_minutes" min="30" max="720" step="15" inputmode="numeric" required>
+        <span class="hint" id="interval-hint"></span>
+      </label>
+      <div class="field">
+        <a class="btn ghost link-btn" href="/api/export.csv" download="boobo-export.csv">CSV exportieren</a>
+      </div>
+      <p class="meta tagline">Für Bobo. Und für zwei müde, großartige Eltern.</p>
+      <p class="meta" id="settings-meta">Boobo</p>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Schließen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

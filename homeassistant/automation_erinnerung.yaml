@@ -1,0 +1,64 @@
+# Boobo: Bobo hat bald Hunger
+#
+# Einfügen über: Einstellungen → Automatisierungen → „Automatisierung erstellen“
+# → „Neue Automatisierung“ → Menü (⋮) oben rechts → „In YAML bearbeiten“ → Inhalt
+# dieser Datei einfügen → Speichern.
+#
+# Vorher anpassen:
+#   - NAS-IP durch die IP des NAS ersetzen.
+#   - notify.notify durch die eigenen Handys ersetzen, z. B.
+#       notify.mobile_app_iphone_von_anna  und  notify.mobile_app_pixel_von_ben
+#     (Dienstnamen finden: Entwicklerwerkzeuge → Aktionen → „notify.mobile_app“ eintippen.)
+#     Für zwei Handys einfach den action-Block duplizieren oder eine notify-Gruppe anlegen.
+#
+# Nachtruhe (optional): unter `conditions:` z. B. ergänzen
+#   - condition: time
+#     after: "07:00:00"
+#     before: "22:00:00"
+# Dann gibt es nachts keine Benachrichtigung – beim Stillen im Halbschlaf oft erwünscht.
+
+alias: "Boobo: Bobo hat bald Hunger"
+description: "Benachrichtigt beide Eltern, wenn seit dem letzten Stillen mehr als das eingestellte Intervall (Standard 3 h) vergangen ist."
+mode: single
+
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.boobo_ueberfaellig
+    to: "on"
+    for:
+      minutes: 1
+
+conditions: []
+
+actions:
+  # Handy 1 – `notify.notify` durch `notify.mobile_app_<handy1>` ersetzen
+  - action: notify.notify
+    data:
+      title: "Bobo hat bald Hunger"
+      message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+      data:
+        tag: boobo-due              # gleiche tag → Benachrichtigung wird ersetzt statt gestapelt
+        channel: Boobo              # Android: eigener Benachrichtigungskanal
+        importance: high            # Android
+        url: "http://NAS-IP:8099"   # iOS: Tippen auf die Benachrichtigung öffnet die App
+        clickAction: "http://NAS-IP:8099"  # Android: dito
+        actions:
+          - action: URI
+            title: "Boobo öffnen"
+            uri: "http://NAS-IP:8099"
+
+  # Handy 2 – Block kopieren und `notify.mobile_app_<handy2>` eintragen:
+  # - action: notify.mobile_app_handy2
+  #   data:
+  #     title: "Bobo hat bald Hunger"
+  #     message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+  #     data:
+  #       tag: boobo-due
+  #       channel: Boobo
+  #       importance: high
+  #       url: "http://NAS-IP:8099"
+  #       clickAction: "http://NAS-IP:8099"
+  #       actions:
+  #         - action: URI
+  #           title: "Boobo öffnen"
+  #           uri: "http://NAS-IP:8099"

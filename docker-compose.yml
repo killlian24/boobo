@@ -1,0 +1,27 @@
+# Boobo – Still-Tracker
+# Für Portainer "Stacks → Add stack → Repository" gedacht: Portainer klont das Repo
+# und baut das Image direkt auf dem NAS aus dem Dockerfile.
+services:
+  boobo:
+    build: .
+    image: boobo:local
+    container_name: boobo
+    ports:
+      - "8099:8099"
+    volumes:
+      # Variante A (Standard): benanntes Docker-Volume, Rechte passen automatisch.
+      - boobo-data:/data
+      # Variante B: Bind-Mount in einen Ordner auf dem NAS, z. B. (Synology) /volume1/docker/boobo.
+      # Dazu die Zeile oben auskommentieren, diese aktivieren und den Ordner einmalig
+      # dem Container-User (uid 1000 = `node`) geben:
+      #   sudo mkdir -p /volume1/docker/boobo && sudo chown -R 1000:1000 /volume1/docker/boobo
+      # - /volume1/docker/boobo:/data
+    environment:
+      - TZ=Europe/Berlin
+      # Standard-Intervall in Minuten (3 h). Gilt nur beim ersten Start als Default;
+      # danach wird der Wert aus den App-Einstellungen (SQLite) genommen.
+      - FEED_INTERVAL_MINUTES=180
+    restart: unless-stopped
+
+volumes:
+  boobo-data:

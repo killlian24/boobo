@@ -1,0 +1,41 @@
+# Boobo: Erinnerung wiederholen (optional)
+#
+# Schickt alle 30 Minuten erneut eine Benachrichtigung, solange die Zeit seit dem letzten Stillen über dem eingestellten Abstand liegt.
+# Nur einrichten, wenn die einmalige Erinnerung aus automation_erinnerung.yaml nicht reicht.
+# Einfügen wie dort beschrieben (neue Automatisierung → „In YAML bearbeiten“).
+# NAS-IP und notify.notify anpassen.
+
+alias: "Boobo: Erinnerung wiederholen"
+description: "Alle 30 min sanft erinnern, solange Bobo noch wartet."
+mode: single
+
+triggers:
+  - trigger: time_pattern
+    minutes: "/30"
+
+conditions:
+  - condition: state
+    entity_id: binary_sensor.boobo_ueberfaellig
+    state: "on"
+    for:
+      minutes: 30
+  # Optional Nachtruhe:
+  # - condition: time
+  #   after: "07:00:00"
+  #   before: "22:00:00"
+
+actions:
+  - action: notify.notify
+    data:
+      title: "Bobo wartet noch"
+      message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+      data:
+        tag: boobo-due
+        channel: Boobo
+        importance: high
+        url: "http://NAS-IP:8099"
+        clickAction: "http://NAS-IP:8099"
+        actions:
+          - action: URI
+            title: "Boobo öffnen"
+            uri: "http://NAS-IP:8099"

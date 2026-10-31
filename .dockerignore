@@ -1,0 +1,24 @@
+# Nicht ins Docker-Image kopieren
+.git
+.gitignore
+.gitattributes
+.github
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+node_modules
+data
+test
+docs
+homeassistant
+*.md
+LICENSE
+.DS_Store
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+.vscode
+.idea
