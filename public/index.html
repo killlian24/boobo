@@ -34,14 +34,22 @@
 
   <header class="topbar">
     <h1 class="brand"><img src="/icon.svg" alt="" width="28" height="28"> Boobo</h1>
-    <button id="btn-settings" class="icon-btn" type="button" aria-label="Einstellungen">
+    <div class="topbar-actions">
+      <button id="btn-stats" class="icon-btn" type="button" aria-label="Statistik">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+            d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/>
+        </svg>
+      </button>
+      <button id="btn-settings" class="icon-btn" type="button" aria-label="Einstellungen">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
         <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
           d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
         <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
           d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>
       </svg>
-    </button>
+      </button>
+    </div>
   </header>
 
   <main class="app">
@@ -107,7 +115,10 @@
     </section>
 
     <section id="summary" class="summary card" aria-labelledby="summary-title" hidden>
-      <h2 id="summary-title" class="section-title">Letzte 24 Stunden</h2>
+      <div class="card-head">
+        <h2 id="summary-title" class="section-title">Letzte 24 Stunden</h2>
+        <button id="btn-stats-more" class="text-link" type="button">Statistik</button>
+      </div>
       <p id="summary-feeds" class="summary-line main"></p>
       <p id="summary-diapers" class="summary-line" hidden></p>
     </section>
@@ -242,6 +253,24 @@
         <button type="button" class="btn ghost" data-close>Schließen</button>
         <button type="submit" class="btn primary">Speichern</button>
       </div>
+    </form>
+  </dialog>
+
+  <!-- Statistik -->
+  <dialog id="dlg-stats" class="sheet sheet-tall" aria-labelledby="stats-title">
+    <form method="dialog" id="form-stats">
+      <div class="sheet-head">
+        <h2 id="stats-title">Bobos Takt</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Schließen">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="segmented three neutral stats-range" id="stats-range" role="radiogroup" aria-label="Zeitraum" data-name="range">
+        <button type="button" class="seg" data-value="7" aria-pressed="false">7 Tage</button>
+        <button type="button" class="seg" data-value="14" aria-pressed="false">14 Tage</button>
+        <button type="button" class="seg" data-value="30" aria-pressed="false">30 Tage</button>
+      </div>
+      <div id="stats-body" class="stats-body" aria-live="polite"></div>
     </form>
   </dialog>
 

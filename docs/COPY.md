@@ -66,3 +66,16 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Medikament löschen | „Paracetamol löschen?“ · „Die notierten Einnahmen verschwinden mit.“ · „Ja, löschen“ / „Behalten“ |
 | Export | „Windeln als CSV“ · „Medikamente als CSV“ |
 | Startbildschirm-Hilfe | Buttons „Zertifikat laden“ und „Boobo verschlüsselt öffnen“ (kein Kopieren mehr nötig) |
+
+## Erweiterung 4: Statistik
+
+| Stelle | Text |
+|---|---|
+| Kopfzeile / Karte | Icon-Button „Statistik“ · Link „Statistik“ in „Letzte 24 Stunden“ |
+| Titel | „Bobos Takt“ |
+| Zeitraum | „7 Tage“ / „14 Tage“ / „30 Tage“ |
+| Kennzahlen | „Pro Tag“ (8,2 · „Ø über 13 volle Tage“ / „noch kein voller Tag“) · „Abstand“ (2 h 57 · „im Mittel · meist 2 h 54“) · „Nachts“ (2,8 · „pro Nacht, 22–7 Uhr“) · „Längste Pause“ (4 h 48 · „bis gestern 09:14“) |
+| Abschnitte | „Wie oft pro Tag“ („Heller Balken: heute, noch nicht vorbei.“) · „Zu welcher Zeit“ („Am häufigsten zwischen 11 und 12 Uhr. Grau hinterlegt: die Nacht.“) · „Das Muster“ („Jede Zeile ein Tag, jedes Feld eine Stunde. Dunkel: da kam Bobo.“) · „Welche Seite“ („112 Mal in 14 Tagen, davon 10 Flasche · Links 51 %, Rechts 49 % (ohne Beide)“) · „Wie lange dazwischen“ („112 Abstände · kürzester 1 h 50“) · „Alle Tage als Tabelle“ |
+| Hinweis unter Diagramm | „Tag antippen für Einzelheiten“ / „Stunde antippen für Einzelheiten“ / „Feld antippen für Einzelheiten“ · nach Tipp z. B. „Di., 28. Okt.: 9 Mal gestillt, davon 2 Flasche · Ø Abstand 2 h 42 · 3 nachts · 6 Windeln“, „3–4 Uhr: 5 Mal in 14 Tagen“, „Gestern, 6–7 Uhr: 1 Mal“ |
+| Abstands-Klassen | „unter 1 h“ / „1 bis 2 h“ / „2 bis 3 h“ / „3 bis 4 h“ / „über 4 h“ |
+| Leer | „Noch nichts zu sehen. Nach ein paar Tagen zeigt sich hier, wann Bobo kommt.“ |

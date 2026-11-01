@@ -251,3 +251,69 @@ eine eigene kleine CA mit. Der http-Port 8099 bleibt unverändert (Home Assistan
     Home-Bildschirm“ (iPhone).
   - standalone: Abschnitt ausgeblendet. `https.enabled === false`: Hinweis auf README.
 - Der Chrome-Flag-Weg entfällt aus der Anleitung.
+
+# Erweiterung 4 (2026-11-01): Statistik („Bobos Takt“)
+
+Eine Seite, auf der man nachsehen kann, wie oft Bobo kommt und ob sich ein Muster zeigt. Die Aggregation
+läuft im Server (Zeitzone `TZ`, Standard `Europe/Berlin`), das Frontend zeichnet nur.
+
+## `GET /api/stats?days=14`
+`days` 1..90, Standard 14. Zeitraum: die letzten `days` Kalendertage (Ortszeit) einschließlich heute, also ab
+der lokalen Mitternacht vor `days − 1` Tagen bis jetzt. Nacht = 22:00 bis 06:59 Ortszeit (wie der Nachtmodus).
+
+```json
+{
+  "now": "2026-11-01T17:14:26.761Z",
+  "time_zone": "Europe/Berlin",
+  "range_days": 14,
+  "from": "2026-10-18T22:00:00.000Z",      // lokale Mitternacht des ersten Tages
+  "days": [                                 // ein Eintrag pro Kalendertag, ältester zuerst, auch ohne Einträge
+    {
+      "date": "2026-10-19", "start": "2026-10-18T22:00:00.000Z", "weekday": 1, "today": false,
+      "feeds": 8, "left": 3, "right": 3, "both": 1, "bottle": 1,
+      "night_feeds": 2,                     // Einträge mit Ortszeit 22–7 Uhr
+      "diapers_wet": 5, "diapers_dirty": 2,
+      "avg_gap_minutes": 170,               // Mittel der Abstände, die an diesem Tag enden; null ohne Abstand
+      "longest_gap_minutes": 310,
+      "hours": [0, 1, 0, 0, 1, ...]         // 24 Werte: Einträge je Tagesstunde
+    }
+  ],
+  "hours": [2, 5, 1, ...],                  // 24 Werte: Einträge je Tagesstunde über den ganzen Zeitraum
+  "gaps": {                                 // Abstände zwischen aufeinanderfolgenden Einträgen (Minuten)
+    "count": 110, "avg_minutes": 172, "median_minutes": 165,
+    "longest_minutes": 310, "longest_at": "…",   // at = Eintrag, mit dem der Abstand endet
+    "shortest_minutes": 48, "shortest_at": "…",
+    "histogram": [                          // [from, to): < 1 h, 1–2 h, 2–3 h, 3–4 h, ab 4 h (to_minutes null)
+      { "from_minutes": 0, "to_minutes": 60, "n": 3 }, …, { "from_minutes": 240, "to_minutes": null, "n": 9 }
+    ]
+  },
+  "totals": {
+    "feeds": 112, "left": 46, "right": 45, "both": 11, "bottle": 10, "night_feeds": 38,
+    "diapers_wet": 60, "diapers_dirty": 22,
+    "days_with_feeds": 14,
+    "days_counted": 13,                     // vollständige Tage (ohne heute) ab dem ersten Tag mit Eintrag im Zeitraum
+    "feeds_per_day": 8.2,                   // Mittel über days_counted, eine Nachkommastelle; null wenn 0 Tage
+    "bottle_per_day": 0.8, "night_feeds_per_day": 2.8, "diapers_per_day": 6.3
+  }
+}
+```
+
+Regeln:
+- Der Abstand des ersten Eintrags im Zeitraum wird gegen den letzten Eintrag **vor** dem Zeitraum gerechnet
+  (sofern vorhanden). Ein Abstand zählt zu dem Tag, an dem er endet. Die laufende Lücke seit dem letzten Eintrag zählt nicht.
+- Mittelwerte „pro Tag“ ignorieren den heutigen (unvollständigen) Tag und Tage vor dem ersten Eintrag im Zeitraum.
+- `days` ist immer `range_days` lang, auch bei leerer Datenbank (alle Zähler 0, `*_per_day` und Abstände `null`).
+- Fehler: `days` außerhalb 1..90 oder keine Ganzzahl → `400`; andere Methoden → `405`.
+
+## Frontend (public/)
+- Kopfzeile: Balken-Icon neben dem Zahnrad; in der Karte „Letzte 24 Stunden“ der Link „Statistik“. Beide öffnen das
+  Sheet „Bobos Takt“ (`#dlg-stats`).
+- Zeitraum 7 / 14 / 30 Tage als Segmentschalter, Wahl in localStorage `boobo.stats_days`.
+- Inhalt in dieser Reihenfolge: vier Kennzahlen (Pro Tag, Abstand, Nachts, Längste Pause) · Säulen pro Tag (heute
+  heller, „heute“ auf der Achse) · Säulen je Tagesstunde mit grauem Nachtband · Raster Tag × Stunde (dunkler = öfter,
+  heute: künftige Stunden leer) · Seitenverteilung (schmaler Segmentbalken plus Liste mit Zahlen) · Abstands-Klassen
+  (waagrechte Balken) · „Alle Tage als Tabelle“ (aufklappbar).
+- Diagramme sind SVG ohne Bibliothek, eine Datenfarbe (`--ink-l`), Gitter als Haarlinie. Antippen eines Balkens oder
+  Felds schreibt die Einzelheiten in die Zeile darunter; `<title>` liefert dasselbe als Tooltip, Tastatur über Tab/Enter.
+- Während eines Neuladens bleibt die alte Darstellung halbtransparent stehen (kein Flackern). Leer: „Noch nichts zu
+  sehen. Nach ein paar Tagen zeigt sich hier, wann Bobo kommt.“

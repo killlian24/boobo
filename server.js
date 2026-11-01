@@ -24,6 +24,11 @@ const INTERVAL_MIN = 30;
 const INTERVAL_MAX = 720;
 const FEEDS_LIMIT_DEFAULT = 50;
 const FEEDS_LIMIT_MAX = 500;
+const STATS_DAYS_DEFAULT = 14;
+const STATS_DAYS_MAX = 90;
+const NIGHT_FROM_HOUR = 22; // Nacht = 22:00 bis 06:59 Ortszeit (wie der Nachtmodus)
+const NIGHT_TO_HOUR = 7;
+const GAP_BUCKETS_MINUTES = [60, 120, 180, 240]; // < 1 h, 1-2 h, 2-3 h, 3-4 h, ab 4 h
 const DIAPER_KINDS = new Set(['wet', 'dirty']);
 const DUPLICATE_MODES = new Set(['ask', 'force', 'skip']);
 const DUPLICATE_MINUTES_DEFAULT = 10;
@@ -255,6 +260,8 @@ function createRepo(db) {
     countSince: db.prepare('SELECT COUNT(*) AS n FROM feeds WHERE at >= ? AND at <= ?'),
     feedsNear: db.prepare('SELECT * FROM feeds WHERE at > ? AND at < ? ORDER BY at DESC, id DESC'),
     feedsAfter: db.prepare('SELECT id, side, at FROM feeds WHERE at > ? ORDER BY at ASC, id ASC'),
+    feedsFrom: db.prepare('SELECT id, side, at FROM feeds WHERE at >= ? ORDER BY at ASC, id ASC'),
+    feedBefore: db.prepare('SELECT id, side, at FROM feeds WHERE at < ? ORDER BY at DESC, id DESC LIMIT 1'),
 
     diaperInsert: db.prepare(
       'INSERT INTO diapers (kind, at, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
@@ -272,6 +279,7 @@ function createRepo(db) {
     diaperCountsAfter: db.prepare(
       'SELECT kind, COUNT(*) AS n FROM diapers WHERE at > ? GROUP BY kind',
     ),
+    diapersFrom: db.prepare('SELECT kind, at FROM diapers WHERE at >= ? ORDER BY at ASC, id ASC'),
 
     medAll: db.prepare('SELECT * FROM medications ORDER BY sort_order ASC, id ASC'),
     medById: db.prepare('SELECT * FROM medications WHERE id = ?'),
@@ -364,6 +372,12 @@ function createRepo(db) {
     feedsAfter(fromIso) {
       return stmts.feedsAfter.all(fromIso);
     },
+    feedsFrom(fromIso) {
+      return stmts.feedsFrom.all(fromIso);
+    },
+    feedBefore(iso) {
+      return stmts.feedBefore.get(iso) ?? null;
+    },
 
     // --- diapers ---
     insertDiaper(kind, at, note) {
@@ -393,6 +407,9 @@ function createRepo(db) {
         if (row.kind in out) out[row.kind] = Number(row.n);
       }
       return out;
+    },
+    diapersFrom(fromIso) {
+      return stmts.diapersFrom.all(fromIso);
     },
 
     // --- medications ---
@@ -637,6 +654,16 @@ function parseLimit(raw) {
   return Math.min(n, FEEDS_LIMIT_MAX);
 }
 
+function parseDays(raw) {
+  if (raw === null || raw === '') return STATS_DAYS_DEFAULT;
+  if (!/^\d+$/.test(raw)) throw new HttpError(400, `days must be an integer between 1 and ${STATS_DAYS_MAX}`);
+  const n = Number.parseInt(raw, 10);
+  if (n < 1 || n > STATS_DAYS_MAX) {
+    throw new HttpError(400, `days must be an integer between 1 and ${STATS_DAYS_MAX}`);
+  }
+  return n;
+}
+
 function parseFeedId(raw) {
   return parseId(raw, 'Feed not found');
 }
@@ -773,6 +800,185 @@ function buildSummary24h(repo, nowMs, dayAgoIso) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Statistik (docs/API.md, Erweiterung 4): Tage, Tageszeiten, Abstände, Seiten
+// ---------------------------------------------------------------------------
+
+function isNightHour(hour) {
+  return hour >= NIGHT_FROM_HOUR || hour < NIGHT_TO_HOUR;
+}
+
+function dateKey(p) {
+  const mm = String(p.month).padStart(2, '0');
+  const dd = String(p.day).padStart(2, '0');
+  return `${p.year}-${mm}-${dd}`;
+}
+
+function minutes(ms) {
+  return Math.round(ms / MINUTE_MS);
+}
+
+function mean(values) {
+  if (!values.length) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function round1(n) {
+  return n === null ? null : Math.round(n * 10) / 10;
+}
+
+// Lokale Mitternacht des Tages, der `offsetDays` nach dem Tag von `midnight` liegt (DST-sicher:
+// über den Mittag des Zieltags gehen, dann auf dessen Mitternacht runden).
+function shiftMidnight(midnight, offsetDays, timeZone) {
+  return localMidnight(new Date(midnight.getTime() + offsetDays * DAY_MS + DAY_MS / 2), timeZone);
+}
+
+function buildStats(repo, timeZone, rangeDays) {
+  const now = new Date();
+  const nowMs = now.getTime();
+  const todayMidnight = localMidnight(now, timeZone);
+  const start = shiftMidnight(todayMidnight, -(rangeDays - 1), timeZone);
+  const startIso = start.toISOString();
+  const todayKey = dateKey(wallClockParts(now, timeZone));
+
+  // Ein Eintrag pro Kalendertag des Zeitraums, auch ohne Einträge (durchgehende Achse).
+  const days = [];
+  const byKey = new Map();
+  for (let i = 0; i < rangeDays; i++) {
+    const dayStart = shiftMidnight(start, i, timeZone);
+    const parts = wallClockParts(dayStart, timeZone);
+    const key = dateKey(parts);
+    const entry = {
+      date: key,
+      start: dayStart.toISOString(),
+      weekday: new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay(),
+      today: key === todayKey,
+      feeds: 0,
+      left: 0,
+      right: 0,
+      both: 0,
+      bottle: 0,
+      night_feeds: 0,
+      diapers_wet: 0,
+      diapers_dirty: 0,
+      avg_gap_minutes: null,
+      longest_gap_minutes: null,
+      hours: new Array(24).fill(0),
+      _gaps: [],
+    };
+    days.push(entry);
+    byKey.set(key, entry);
+  }
+
+  const hours = new Array(24).fill(0);
+  const gaps = [];
+  let longest = null; // { minutes, at }
+  let shortest = null;
+  const totals = { feeds: 0, left: 0, right: 0, both: 0, bottle: 0, night_feeds: 0, diapers_wet: 0, diapers_dirty: 0 };
+
+  let prev = repo.feedBefore(startIso);
+  for (const feed of repo.feedsFrom(startIso)) {
+    const at = new Date(feed.at);
+    const parts = wallClockParts(at, timeZone);
+    const entry = byKey.get(dateKey(parts));
+    if (!entry) {
+      // Minuten in der Zukunft (bis 5 min erlaubt) können knapp hinter Mitternacht liegen
+      prev = feed;
+      continue;
+    }
+    entry.feeds++;
+    totals.feeds++;
+    if (feed.side in totals) {
+      entry[feed.side]++;
+      totals[feed.side]++;
+    }
+    entry.hours[parts.hour]++;
+    hours[parts.hour]++;
+    if (isNightHour(parts.hour)) {
+      entry.night_feeds++;
+      totals.night_feeds++;
+    }
+    if (prev) {
+      const gapMin = minutes(at.getTime() - Date.parse(prev.at));
+      if (gapMin >= 0) {
+        entry._gaps.push(gapMin);
+        gaps.push(gapMin);
+        if (!longest || gapMin > longest.minutes) longest = { minutes: gapMin, at: feed.at };
+        if (!shortest || gapMin < shortest.minutes) shortest = { minutes: gapMin, at: feed.at };
+      }
+    }
+    prev = feed;
+  }
+
+  for (const d of repo.diapersFrom(startIso)) {
+    const entry = byKey.get(dateKey(wallClockParts(new Date(d.at), timeZone)));
+    if (!entry) continue;
+    if (d.kind === 'wet') {
+      entry.diapers_wet++;
+      totals.diapers_wet++;
+    } else if (d.kind === 'dirty') {
+      entry.diapers_dirty++;
+      totals.diapers_dirty++;
+    }
+  }
+
+  for (const entry of days) {
+    entry.avg_gap_minutes = entry._gaps.length ? Math.round(mean(entry._gaps)) : null;
+    entry.longest_gap_minutes = entry._gaps.length ? Math.max(...entry._gaps) : null;
+    delete entry._gaps;
+  }
+
+  // Mittelwerte „pro Tag“ nur über vollständige Tage ab dem ersten Tag mit Eintrag im Zeitraum.
+  const firstIdx = days.findIndex((d) => d.feeds > 0);
+  const fullDays = firstIdx < 0 ? [] : days.slice(firstIdx).filter((d) => !d.today);
+  const daysCounted = fullDays.length;
+  const sum = (key) => fullDays.reduce((a, d) => a + d[key], 0);
+  const perDay = (key) => (daysCounted ? round1(sum(key) / daysCounted) : null);
+
+  const gapBuckets = [];
+  let lower = 0;
+  for (const upper of GAP_BUCKETS_MINUTES) {
+    gapBuckets.push({ from_minutes: lower, to_minutes: upper, n: gaps.filter((g) => g >= lower && g < upper).length });
+    lower = upper;
+  }
+  gapBuckets.push({ from_minutes: lower, to_minutes: null, n: gaps.filter((g) => g >= lower).length });
+
+  return {
+    now: now.toISOString(),
+    time_zone: timeZone,
+    range_days: rangeDays,
+    from: startIso,
+    days,
+    hours,
+    gaps: {
+      count: gaps.length,
+      avg_minutes: gaps.length ? Math.round(mean(gaps)) : null,
+      median_minutes: gaps.length ? Math.round(median(gaps)) : null,
+      longest_minutes: longest ? longest.minutes : null,
+      longest_at: longest ? longest.at : null,
+      shortest_minutes: shortest ? shortest.minutes : null,
+      shortest_at: shortest ? shortest.at : null,
+      histogram: gapBuckets,
+    },
+    totals: {
+      ...totals,
+      days_with_feeds: days.filter((d) => d.feeds > 0).length,
+      days_counted: daysCounted,
+      feeds_per_day: perDay('feeds'),
+      bottle_per_day: perDay('bottle'),
+      night_feeds_per_day: perDay('night_feeds'),
+      diapers_per_day: daysCounted ? round1((sum('diapers_wet') + sum('diapers_dirty')) / daysCounted) : null,
+    },
+  };
+}
+
 // Medication with its status, see docs/API.md, Erweiterung 2 §4 „Statusberechnung“.
 function medicationView(repo, med, nowMs) {
   const stats = repo.medicationStats(med.id, new Date(nowMs - DAY_MS).toISOString());
@@ -825,6 +1031,11 @@ async function handleApi(req, res, url, ctx) {
 
   if (p === '/api/state' && method === 'GET') {
     return sendJson(res, 200, buildState(repo, timeZone));
+  }
+
+  if (p === '/api/stats') {
+    if (method !== 'GET') throw new HttpError(405, 'Method not allowed');
+    return sendJson(res, 200, buildStats(repo, timeZone, parseDays(url.searchParams.get('days'))));
   }
 
   if (p === '/api/feeds') {

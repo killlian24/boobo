@@ -946,6 +946,155 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   user-select: all;
 }
 
+/* ---------- Erweiterung 4: Statistik („Bobos Takt“) ---------- */
+
+.topbar-actions { display: flex; align-items: center; gap: 2px; margin-right: -10px; }
+.topbar-actions .icon-btn { margin-right: 0; }
+
+.sheet-tall { max-height: 96dvh; min-height: 70dvh; }
+@media (min-width: 640px) { .sheet-tall { min-height: 0; } }
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -6px 0 10px;
+}
+.sheet-head h2 { margin: 0; }
+.sheet-head .icon-btn { margin-right: -10px; }
+.stats-range { margin-bottom: 4px; }
+
+.stats-body { transition: opacity 0.2s; }
+.stats-body.loading { opacity: 0.55; }
+.stats-section { margin-top: 22px; }
+.stats-sub {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+/* Kennzahlen */
+.stats-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-s);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.tile-label { font-size: 0.8125rem; font-weight: 600; color: var(--text-2); }
+.tile-value { font-size: 1.75rem; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.tile-sub { font-size: 0.75rem; line-height: 16px; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* Diagramme: eine Datenfarbe (--ink-l), Gitter als Haarlinie, Nachtband als Fläche */
+.chart { display: block; margin-top: 10px; overflow: visible; --chart-ink: var(--ink-l); }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--text-2); stroke-width: 1; opacity: 0.6; }
+.chart .tick { font-size: 11px; fill: var(--text-2); font-variant-numeric: tabular-nums; }
+.chart .tick.today { fill: var(--text); font-weight: 600; }
+.chart .value { font-size: 12px; font-weight: 600; fill: var(--text); font-variant-numeric: tabular-nums; }
+.chart .night-band { fill: var(--line); opacity: 0.45; }
+.chart .bar { fill: var(--chart-ink); }
+.chart .mark.partial .bar { opacity: 0.45; }
+.chart .hit { fill: transparent; cursor: pointer; }
+.chart .mark:focus { outline: none; }
+.chart .mark:focus-visible .hit, .chart .mark.active .hit { fill: var(--text); opacity: 0.08; }
+.chart .mark:focus-visible .bar, .chart .mark.active .bar { opacity: 1; filter: brightness(0.85); }
+.chart-detail {
+  margin: 8px 0 0;
+  min-height: 18px;
+  font-size: 0.8125rem;
+  line-height: 18px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Raster Tag × Stunde: Füllung als Stufen einer Farbe */
+.grid-chart .cell .box { fill: var(--chart-ink); }
+.grid-chart .c0 .box { fill: var(--line); opacity: 0.6; }
+.grid-chart .c- .box { fill: transparent; }
+.grid-chart .c1 .box { opacity: 0.5; }
+.grid-chart .c2 .box { opacity: 1; }
+.grid-chart .mark.active .box, .grid-chart .mark:focus-visible .box { stroke: var(--text); stroke-width: 2; }
+
+/* Seiten: schmaler Segmentbalken, darunter Liste mit Zahlen */
+.seg-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin-top: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.seg-part { display: block; flex: 0 1 auto; min-width: 2px; background: var(--side-color); }
+.side-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.side-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 0.9375rem;
+  border-top: 1px solid var(--line);
+}
+.side-row:first-child { border-top: 0; }
+.side-row .dot {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--side-color);
+  color: var(--side-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.side-label { flex: 1 1 auto; font-weight: 600; }
+.side-n, .side-pct { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.side-pct { flex: 0 0 48px; text-align: right; }
+
+/* Abstände: waagrechte Balken, Wert an der Spitze */
+.hbar-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.hbar-row { display: flex; align-items: center; gap: 10px; font-size: 0.875rem; }
+.hbar-label { flex: 0 0 78px; color: var(--text-2); }
+.hbar-track { flex: 1 1 auto; height: 14px; display: flex; align-items: center; }
+.hbar { display: block; height: 12px; border-radius: 0 4px 4px 0; background: var(--ink-l); min-width: 0; transition: width 0.3s ease; }
+.hbar-n { flex: 0 0 28px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Tabellenansicht */
+.stats-details { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.stats-details summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  list-style: none;
+}
+.stats-details summary::-webkit-details-marker { display: none; }
+.stats-details summary::after { content: "+"; margin-left: auto; color: var(--text-2); font-size: 1.25rem; font-weight: 400; }
+.stats-details[open] summary::after { content: "–"; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.stats-table th, .stats-table td { padding: 6px 3px; text-align: left; white-space: nowrap; border-top: 1px solid var(--line); }
+.stats-table th:first-child, .stats-table td:first-child { padding-left: 0; }
+.stats-table th:last-child, .stats-table td:last-child { padding-right: 0; }
+.stats-table th { color: var(--text-2); font-weight: 600; border-top: 0; }
+.stats-table .num { text-align: right; }
+.stats-table tr.today td { font-weight: 600; }
+.stats-details .hint { margin: 6px 0 10px; }
+
 @media (max-width: 340px) {
   .ring-wrap { flex-basis: 100px; width: 100px; height: 100px; }
   .status-time { font-size: 1.5rem; }

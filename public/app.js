@@ -1380,6 +1380,435 @@
     });
   }
 
+  // ---------- Statistik („Bobos Takt“) ----------
+  // Daten kommen fertig aggregiert von GET /api/stats?days=N (docs/API.md, Erweiterung 4).
+  // Diagramme sind schlichtes SVG: eine Farbe (--ink-l) für Mengen, Seitenfarben nur bei der Seitenverteilung.
+
+  var LS_STATS_DAYS = 'boobo.stats_days';
+  var STATS_RANGES = [7, 14, 30];
+  var STATS_DAYS_DEFAULT = 14;
+  var WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var BAR_MAX = 24;      // dickster Balken (px)
+  var BAR_GAP = 2;       // Lücke in Flächenfarbe zwischen Nachbarn (px)
+  var GAP_LABELS = ['unter 1 h', '1 bis 2 h', '2 bis 3 h', '3 bis 4 h', 'über 4 h'];
+
+  var stats = { days: STATS_DAYS_DEFAULT, data: null, loading: null, seq: 0 };
+
+  function svgEl(tag, attrs, children) {
+    var node = document.createElementNS(SVG_NS, tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (attrs[k] == null) return;
+      if (k === 'text') node.textContent = attrs[k];
+      else node.setAttribute(k, String(attrs[k]));
+    });
+    (children || []).forEach(function (c) { if (c) node.appendChild(c); });
+    return node;
+  }
+
+  // Säule: unten eckig an der Grundlinie, oben 4 px gerundet
+  function columnPath(x, yTop, w, h) {
+    if (h <= 0) return '';
+    var r = Math.min(4, w / 2, h);
+    var yb = yTop + h;
+    return 'M' + x + ' ' + yb + 'V' + (yTop + r) + 'a' + r + ' ' + r + ' 0 0 1 ' + r + ' -' + r +
+      'h' + (w - 2 * r) + 'a' + r + ' ' + r + ' 0 0 1 ' + r + ' ' + r + 'V' + yb + 'Z';
+  }
+
+  // Balkenbreite im Band: höchstens 24 px, sonst etwa 70 % des Bands, mindestens 2 px Lücke
+  function barWidth(band) {
+    return Math.max(3, Math.min(BAR_MAX, band - Math.max(BAR_GAP, band * 0.3)));
+  }
+
+  function fmt1(n) {
+    if (!isNum(n)) return '–';
+    return String(Math.round(n * 10) / 10).replace('.', ',');
+  }
+
+  function niceStep(max) {
+    if (max <= 5) return 1;
+    if (max <= 10) return 2;
+    if (max <= 25) return 5;
+    return 10;
+  }
+
+  // "2026-10-28" → lokales Date (nur für Beschriftungen)
+  function dateFromKey(key) {
+    var p = key.split('-');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  }
+
+  function statsDayLabel(d, now) {
+    var date = dateFromKey(d.date);
+    var k = dayKey(date);
+    if (k === dayKey(now)) return 'Heute';
+    var y = new Date(now); y.setDate(y.getDate() - 1);
+    if (k === dayKey(y)) return 'Gestern';
+    return fmtDate.format(date);
+  }
+
+  function hourRangeText(h) { return h + '–' + ((h + 1) % 24) + ' Uhr'; }
+
+  function getStatsDays() {
+    var v = parseInt(lsGet(LS_STATS_DAYS), 10);
+    return STATS_RANGES.indexOf(v) >= 0 ? v : STATS_DAYS_DEFAULT;
+  }
+
+  function openStats() {
+    stats.days = getStatsDays();
+    segSet($('#stats-range'), String(stats.days));
+    if (!stats.data) {
+      var body = $('#stats-body');
+      body.textContent = '';
+      body.appendChild(el('p', { class: 'empty-hint', text: 'Lade …' }));
+    }
+    openDialog($('#dlg-stats'));
+    loadStats();
+  }
+
+  function loadStats() {
+    var days = stats.days;
+    var seq = ++stats.seq;
+    var body = $('#stats-body');
+    body.classList.add('loading');
+    return api('GET', '/api/stats?days=' + days).then(function (res) {
+      if (seq !== stats.seq) return;
+      stats.data = res;
+      renderStats();
+    }).catch(function (err) {
+      if (seq !== stats.seq) return;
+      if (!stats.data) {
+        body.textContent = '';
+        body.appendChild(el('p', { class: 'empty-hint', text: errorText(err) }));
+      } else {
+        showToast(errorText(err), { error: true, duration: 5000 });
+      }
+    }).then(function () {
+      if (seq === stats.seq) body.classList.remove('loading');
+    });
+  }
+
+  function setStatsRange(days) {
+    if (STATS_RANGES.indexOf(days) < 0 || days === stats.days) return;
+    stats.days = days;
+    lsSet(LS_STATS_DAYS, String(days));
+    segSet($('#stats-range'), String(days));
+    loadStats();
+  }
+
+  function renderStats() {
+    var body = $('#stats-body');
+    var d = stats.data;
+    var tableOpen = !!(body.querySelector('.stats-details') && body.querySelector('.stats-details').open);
+    body.textContent = '';
+    if (!d || !Array.isArray(d.days)) return;
+    if (!d.totals || !d.totals.feeds) {
+      body.appendChild(el('p', { class: 'empty-hint', text: 'Noch nichts zu sehen. Nach ein paar Tagen zeigt sich hier, wann Bobo kommt.' }));
+      return;
+    }
+    var width = Math.max(240, body.clientWidth || 320);
+    body.appendChild(renderStatsTiles(d));
+    body.appendChild(renderDayChart(d, width));
+    body.appendChild(renderHourChart(d, width));
+    body.appendChild(renderPatternGrid(d, width));
+    body.appendChild(renderSides(d));
+    body.appendChild(renderGapBars(d));
+    body.appendChild(renderStatsTable(d, tableOpen));
+  }
+
+  function statsSection(title, sub, children) {
+    var kids = [el('h3', { class: 'section-title', text: title })];
+    if (sub) kids.push(el('p', { class: 'stats-sub', text: sub }));
+    return el('section', { class: 'stats-section' }, kids.concat(children || []));
+  }
+
+  function tile(label, value, sub) {
+    return el('div', { class: 'tile' }, [
+      el('span', { class: 'tile-label', text: label }),
+      el('span', { class: 'tile-value', text: value }),
+      sub ? el('span', { class: 'tile-sub', text: sub }) : null
+    ]);
+  }
+
+  function renderStatsTiles(d) {
+    var t = d.totals;
+    var g = d.gaps || {};
+    var now = new Date();
+    var counted = isNum(t.days_counted) ? t.days_counted : 0;
+    var perDaySub = counted ? 'Ø über ' + plural(counted, 'vollen Tag', 'volle Tage') : 'noch kein voller Tag';
+    var gapSub = isNum(g.median_minutes) ? 'im Mittel · meist ' + formatDuration(g.median_minutes, 'gap') : 'zwischen zwei Mahlzeiten';
+    var longestAt = toDate(g.longest_at);
+    var longestSub = longestAt ? 'bis ' + dayPrefix(longestAt, now) + fmtTime.format(longestAt) : '';
+    return el('div', { class: 'stats-tiles' }, [
+      tile('Pro Tag', fmt1(t.feeds_per_day), perDaySub),
+      tile('Abstand', isNum(g.avg_minutes) ? formatDuration(g.avg_minutes, 'gap') : '–', gapSub),
+      tile('Nachts', fmt1(t.night_feeds_per_day), 'pro Nacht, 22–7 Uhr'),
+      tile('Längste Pause', isNum(g.longest_minutes) ? formatDuration(g.longest_minutes, 'gap') : '–', longestSub)
+    ]);
+  }
+
+  // Detailzeile unter einem Diagramm: Antippen eines Balkens/Felds schreibt hier hinein
+  function detailLine(hint) {
+    var p = el('p', { class: 'chart-detail', text: hint || '' });
+    p.setAttribute('role', 'status');
+    return p;
+  }
+
+  function pickable(node, onPick) {
+    node.setAttribute('tabindex', '0');
+    node.setAttribute('role', 'button');
+    node.addEventListener('click', onPick);
+    node.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(); }
+    });
+  }
+
+  function selectMark(svg, mark) {
+    $$('.mark.active', svg).forEach(function (m) { m.classList.remove('active'); });
+    if (mark) mark.classList.add('active');
+  }
+
+  function dayDetailText(day, now) {
+    var parts = [day.feeds + ' Mal gestillt'];
+    if (day.bottle) parts[0] += ', davon ' + day.bottle + ' Flasche';
+    if (isNum(day.avg_gap_minutes)) parts.push('Ø Abstand ' + formatDuration(day.avg_gap_minutes, 'gap'));
+    if (day.night_feeds) parts.push(day.night_feeds + ' nachts');
+    var w = (day.diapers_wet || 0) + (day.diapers_dirty || 0);
+    if (w) parts.push(plural(w, 'Windel', 'Windeln'));
+    return statsDayLabel(day, now) + (day.today ? ' (bis jetzt)' : '') + ': ' + parts.join(' · ');
+  }
+
+  // Säulen pro Tag
+  function renderDayChart(d, width) {
+    var days = d.days;
+    var n = days.length;
+    var now = new Date();
+    var padL = 26, padR = 6, padT = 20, plotH = 132, axisH = 22;
+    var H = padT + plotH + axisH;
+    var innerW = width - padL - padR;
+    var band = innerW / n;
+    var barW = barWidth(band);
+    var max = 0;
+    days.forEach(function (x) { if (x.feeds > max) max = x.feeds; });
+    var step = niceStep(max);
+    var yMax = Math.max(step, Math.ceil(max / step) * step);
+    var y = function (v) { return padT + plotH - (v / yMax) * plotH; };
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + width + ' ' + H, width: '100%', height: H, class: 'chart', role: 'img',
+      'aria-label': 'Stillen pro Tag, ' + n + ' Tage' });
+    // Gitter
+    for (var v = 0; v <= yMax; v += step) {
+      svg.appendChild(svgEl('line', { class: 'grid', x1: padL, x2: width - padR, y1: y(v), y2: y(v) }));
+      svg.appendChild(svgEl('text', { class: 'tick', x: padL - 6, y: y(v) + 4, 'text-anchor': 'end', text: v }));
+    }
+    var labelEvery = n <= 7 ? 1 : (n <= 14 ? 2 : 5);
+    // Beschriftung: jeder labelEvery-te Tag plus „heute“; ein direkt daneben liegendes Datum weicht
+    var labelAt = {};
+    for (var li = 0; li < n; li += labelEvery) labelAt[li] = true;
+    labelAt[n - 1] = true;
+    if (n > 7 && labelAt[n - 2] && band < 30) delete labelAt[n - 2];
+    var maxIdx = -1;
+    days.forEach(function (day, i) { if (day.feeds === max && maxIdx < 0) maxIdx = i; });
+    var detail = detailLine('Tag antippen für Einzelheiten');
+    days.forEach(function (day, i) {
+      var cx = padL + band * i + band / 2;
+      var x0 = cx - barW / 2;
+      var g = svgEl('g', { class: 'mark' + (day.today ? ' partial' : '') });
+      g.appendChild(svgEl('title', { text: dayDetailText(day, now) }));
+      g.appendChild(svgEl('rect', { class: 'hit', x: padL + band * i, y: padT, width: band, height: plotH + axisH }));
+      if (day.feeds > 0) g.appendChild(svgEl('path', { class: 'bar', d: columnPath(x0, y(day.feeds), barW, plotH - (y(day.feeds) - padT)) }));
+      if (i === maxIdx || day.today) {
+        g.appendChild(svgEl('text', { class: 'value', x: cx, y: y(day.feeds) - 5, 'text-anchor': 'middle', text: day.feeds }));
+      }
+      var date = dateFromKey(day.date);
+      if (labelAt[i]) {
+        var lbl = n <= 7 ? WEEKDAYS[day.weekday] : String(date.getDate()) + '.';
+        svg.appendChild(svgEl('text', { class: 'tick' + (day.today ? ' today' : ''), x: cx, y: H - 6, 'text-anchor': 'middle', text: day.today ? 'heute' : lbl }));
+      }
+      pickable(g, function () { selectMark(svg, g); detail.textContent = dayDetailText(day, now); });
+      svg.appendChild(g);
+    });
+    svg.appendChild(svgEl('line', { class: 'axis', x1: padL, x2: width - padR, y1: y(0), y2: y(0) }));
+    var sub = 'Heller Balken: heute, noch nicht vorbei.';
+    return statsSection('Wie oft pro Tag', sub, [svg, detail]);
+  }
+
+  // Säulen pro Tagesstunde (alle Tage zusammen)
+  function renderHourChart(d, width) {
+    var hours = d.hours || [];
+    var padL = 26, padR = 6, padT = 20, plotH = 110, axisH = 22;
+    var H = padT + plotH + axisH;
+    var innerW = width - padL - padR;
+    var band = innerW / 24;
+    var barW = barWidth(band);
+    var max = 0, peak = -1;
+    hours.forEach(function (v, h) { if (v > max) { max = v; peak = h; } });
+    var step = niceStep(max);
+    var yMax = Math.max(step, Math.ceil(max / step) * step);
+    var y = function (v) { return padT + plotH - (v / yMax) * plotH; };
+    var svg = svgEl('svg', { viewBox: '0 0 ' + width + ' ' + H, width: '100%', height: H, class: 'chart', role: 'img',
+      'aria-label': 'Stillen nach Tageszeit' });
+    // Nachtband 22–7 Uhr
+    svg.appendChild(svgEl('rect', { class: 'night-band', x: padL, y: padT, width: band * 7, height: plotH }));
+    svg.appendChild(svgEl('rect', { class: 'night-band', x: padL + band * 22, y: padT, width: band * 2, height: plotH }));
+    for (var v = 0; v <= yMax; v += step) {
+      svg.appendChild(svgEl('line', { class: 'grid', x1: padL, x2: width - padR, y1: y(v), y2: y(v) }));
+      svg.appendChild(svgEl('text', { class: 'tick', x: padL - 6, y: y(v) + 4, 'text-anchor': 'end', text: v }));
+    }
+    var detail = detailLine('Stunde antippen für Einzelheiten');
+    hours.forEach(function (v, h) {
+      var cx = padL + band * h + band / 2;
+      var text = hourRangeText(h) + ': ' + v + ' Mal in ' + d.range_days + ' Tagen';
+      var g = svgEl('g', { class: 'mark' });
+      g.appendChild(svgEl('title', { text: text }));
+      g.appendChild(svgEl('rect', { class: 'hit', x: padL + band * h, y: padT, width: band, height: plotH + axisH }));
+      if (v > 0) g.appendChild(svgEl('path', { class: 'bar', d: columnPath(cx - barW / 2, y(v), barW, plotH - (y(v) - padT)) }));
+      if (h === peak && v > 0) g.appendChild(svgEl('text', { class: 'value', x: cx, y: y(v) - 5, 'text-anchor': 'middle', text: v }));
+      pickable(g, function () { selectMark(svg, g); detail.textContent = text; });
+      svg.appendChild(g);
+    });
+    [0, 6, 12, 18].forEach(function (h) {
+      svg.appendChild(svgEl('text', { class: 'tick', x: padL + band * h + band / 2, y: H - 6, 'text-anchor': 'middle', text: h === 0 ? '0 Uhr' : String(h) }));
+    });
+    svg.appendChild(svgEl('line', { class: 'axis', x1: padL, x2: width - padR, y1: y(0), y2: y(0) }));
+    var sub = peak >= 0 && max > 0 ? 'Am häufigsten zwischen ' + peak + ' und ' + ((peak + 1) % 24) + ' Uhr. Grau hinterlegt: die Nacht.' : '';
+    return statsSection('Zu welcher Zeit', sub, [svg, detail]);
+  }
+
+  // Raster Tag × Stunde: jede Zelle eine Stunde, dunkler = öfter
+  function renderPatternGrid(d, width) {
+    var days = d.days;
+    var n = days.length;
+    var now = new Date();
+    var nowHour = now.getHours();
+    var padL = 44, padR = 2, padT = 18;
+    var rowH = n <= 7 ? 22 : (n <= 14 ? 16 : 11);
+    var innerW = width - padL - padR;
+    var colW = innerW / 24;
+    var H = padT + rowH * n + 2;
+    var labelEvery = rowH >= 13 ? 1 : 2;
+    var svg = svgEl('svg', { viewBox: '0 0 ' + width + ' ' + H, width: '100%', height: H, class: 'chart grid-chart', role: 'img',
+      'aria-label': 'Muster: Tage und Stunden' });
+    svg.appendChild(svgEl('rect', { class: 'night-band', x: padL, y: padT, width: colW * 7, height: rowH * n }));
+    svg.appendChild(svgEl('rect', { class: 'night-band', x: padL + colW * 22, y: padT, width: colW * 2, height: rowH * n }));
+    [0, 6, 12, 18].forEach(function (h) {
+      svg.appendChild(svgEl('text', { class: 'tick', x: padL + colW * h + colW / 2, y: padT - 6, 'text-anchor': 'middle', text: h === 0 ? '0 Uhr' : String(h) }));
+    });
+    var detail = detailLine('Feld antippen für Einzelheiten');
+    days.forEach(function (day, r) {
+      var yTop = padT + rowH * r;
+      var date = dateFromKey(day.date);
+      if (r % labelEvery === 0 || day.today) {
+        var lbl = day.today ? 'heute' : WEEKDAYS[day.weekday] + ' ' + date.getDate() + '.';
+        svg.appendChild(svgEl('text', { class: 'tick' + (day.today ? ' today' : ''), x: padL - 6, y: yTop + rowH / 2 + 3.5, 'text-anchor': 'end', text: lbl }));
+      }
+      for (var h = 0; h < 24; h++) {
+        var v = day.hours[h] || 0;
+        var future = day.today && h > nowHour;
+        var cls = 'cell' + (v >= 2 ? ' c2' : (v === 1 ? ' c1' : (future ? ' c-' : ' c0')));
+        var g = svgEl('g', { class: 'mark ' + cls });
+        var text = statsDayLabel(day, now) + ', ' + hourRangeText(h) + ': ' + (future ? 'noch nicht' : v + ' Mal');
+        g.appendChild(svgEl('title', { text: text }));
+        g.appendChild(svgEl('rect', { class: 'hit', x: padL + colW * h, y: yTop, width: colW, height: rowH }));
+        g.appendChild(svgEl('rect', { class: 'box', x: padL + colW * h + 1, y: yTop + 1, width: Math.max(1, colW - 2), height: Math.max(1, rowH - 2), rx: 2 }));
+        (function (gg, t) { pickable(gg, function () { selectMark(svg, gg); detail.textContent = t; }); })(g, text);
+        svg.appendChild(g);
+      }
+    });
+    return statsSection('Das Muster', 'Jede Zeile ein Tag, jedes Feld eine Stunde. Dunkel: da kam Bobo.', [svg, detail]);
+  }
+
+  // Seitenverteilung: schmaler Segmentbalken plus Liste mit Zahlen
+  function renderSides(d) {
+    var t = d.totals;
+    var total = t.feeds || 0;
+    var order = ['left', 'right', 'both', 'bottle'];
+    var bar = el('div', { class: 'seg-bar', 'aria-hidden': 'true' });
+    var list = el('ul', { class: 'side-list' });
+    order.forEach(function (side) {
+      var n = t[side] || 0;
+      if (!n) return;
+      var pct = Math.round((n / total) * 100);
+      bar.appendChild(el('span', { class: 'seg-part side-' + side, style: 'flex-grow:' + n }));
+      list.appendChild(el('li', { class: 'side-row side-' + side }, [
+        el('span', { class: 'dot', text: SIDE_LETTERS[side] }),
+        el('span', { class: 'side-label', text: SIDE_NAMES[side] }),
+        el('span', { class: 'side-n', text: n + ' Mal' }),
+        el('span', { class: 'side-pct', text: pct + ' %' })
+      ]));
+    });
+    var breast = (t.left || 0) + (t.right || 0) + (t.both || 0);
+    var sub = total + ' Mal in ' + d.range_days + ' Tagen' + (t.bottle ? ', davon ' + t.bottle + ' Flasche' : '');
+    if (t.left && t.right) {
+      var lr = Math.round((t.left / (t.left + t.right)) * 100);
+      sub += ' · Links ' + lr + ' %, Rechts ' + (100 - lr) + ' % (ohne Beide)';
+    }
+    return statsSection('Welche Seite', sub, [bar, list]);
+  }
+
+  // Abstände zwischen zwei Mahlzeiten: waagrechte Balken je Klasse
+  function renderGapBars(d) {
+    var hist = (d.gaps && d.gaps.histogram) || [];
+    var max = 0;
+    hist.forEach(function (b) { if (b.n > max) max = b.n; });
+    var rows = el('div', { class: 'hbar-list' });
+    hist.forEach(function (b, i) {
+      var pct = max ? (b.n / max) * 100 : 0;
+      rows.appendChild(el('div', { class: 'hbar-row' }, [
+        el('span', { class: 'hbar-label', text: GAP_LABELS[i] || '' }),
+        el('span', { class: 'hbar-track' }, [el('span', { class: 'hbar', style: 'width:' + pct + '%' })]),
+        el('span', { class: 'hbar-n', text: String(b.n) })
+      ]));
+    });
+    var g = d.gaps || {};
+    var sub = isNum(g.count) && g.count ? plural(g.count, 'Abstand', 'Abstände') + (isNum(g.shortest_minutes) ? ' · kürzester ' + formatDuration(g.shortest_minutes, 'gap') : '') : '';
+    return statsSection('Wie lange dazwischen', sub, [rows]);
+  }
+
+  // Tabellenansicht: alle Zahlen noch einmal zum Nachlesen
+  function renderStatsTable(d, open) {
+    var now = new Date();
+    var firstIdx = -1;
+    d.days.forEach(function (day, i) { if (firstIdx < 0 && day.feeds > 0) firstIdx = i; });
+    var rows = d.days.slice(Math.max(0, firstIdx)).reverse();
+    var thead = el('thead', null, [el('tr', null, ['Tag', 'Mal', 'Flasche', 'Nachts', 'Ø Abstand', 'Windeln'].map(function (h, i) {
+      return el('th', { text: h, class: i ? 'num' : '' });
+    }))]);
+    var tbody = el('tbody');
+    rows.forEach(function (day) {
+      tbody.appendChild(el('tr', { class: day.today ? 'today' : '' }, [
+        el('td', { text: day.today ? 'Heute' : WEEKDAYS[day.weekday] + ' ' + dateFromKey(day.date).getDate() + '.' }),
+        el('td', { class: 'num', text: String(day.feeds) }),
+        el('td', { class: 'num', text: day.bottle ? String(day.bottle) : '–' }),
+        el('td', { class: 'num', text: day.night_feeds ? String(day.night_feeds) : '–' }),
+        el('td', { class: 'num', text: isNum(day.avg_gap_minutes) ? formatDuration(day.avg_gap_minutes, 'gap') : '–' }),
+        el('td', { class: 'num', text: (day.diapers_wet || day.diapers_dirty) ? (day.diapers_wet + ' / ' + day.diapers_dirty) : '–' })
+      ]));
+    });
+    var table = el('table', { class: 'stats-table' }, [thead, tbody]);
+    var details = el('details', { class: 'stats-details', open: !!open }, [
+      el('summary', { text: 'Alle Tage als Tabelle' }),
+      el('div', { class: 'table-wrap' }, [table]),
+      el('p', { class: 'hint', text: 'Windeln: nass / voll. Nachts: 22 bis 7 Uhr.' })
+    ]);
+    return el('section', { class: 'stats-section' }, [details]);
+  }
+
+  var statsResizeTimer = null;
+  function initStats() {
+    $('#btn-stats').addEventListener('click', openStats);
+    $('#btn-stats-more').addEventListener('click', openStats);
+    $('#stats-range').addEventListener('click', function (e) {
+      var b = e.target.closest('.seg');
+      if (b) setStatsRange(parseInt(b.getAttribute('data-value'), 10));
+    });
+    window.addEventListener('resize', function () {
+      if (!$('#dlg-stats').open || !stats.data) return;
+      clearTimeout(statsResizeTimer);
+      statsResizeTimer = setTimeout(renderStats, 150);
+    });
+  }
+
   // ---------- Startbildschirm-Hilfe ----------
 
   function isStandalone() {
@@ -1481,6 +1910,7 @@
     initConfirm();
     initChips();
     initClickSwallow();
+    initStats();
 
     $$('.feed-btn').forEach(function (b) {
       var side = b.getAttribute('data-side');

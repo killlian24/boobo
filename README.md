@@ -16,6 +16,8 @@ ohne Cloud, ohne Abhängigkeiten.
   Seiten-Button öffnet Nachtragen direkt mit dieser Seite. Einträge ändern und löschen
 - Windeln: „Nass“ und „Voll“ mit einem Tipp, im Verlauf zwischen den Mahlzeiten
 - Tagesbilanz „Letzte 24 Stunden“: wie oft gestillt, längste Pause, Windeln
+- Statistik „Bobos Takt“ (7/14/30 Tage): wie oft pro Tag, mittlerer Abstand, wie oft nachts, längste Pause;
+  Säulen pro Tag und je Tagesstunde, Raster Tag × Stunde fürs Muster, Seitenverteilung, Abstands-Klassen, Tabelle
 - Medikamente für Mama: Paracetamol, Ibuprofen & Co. mit Mindestabstand und Tageshöchstzahl, „Wieder ab 16:30“
   auf einen Blick, Erinnerung per Home Assistant
 - Nachtmodus: Erscheinungsbild System/Hell/Dunkel und automatisches Dimmen zwischen 22 und 7 Uhr
@@ -178,6 +180,7 @@ beschrieben. Kurzüberblick:
 | `PATCH`/`DELETE` | `/api/med-intakes/:id` | Einnahme ändern (Uhrzeit nachkorrigieren) / löschen |
 | `GET`/`PUT` | `/api/settings` | Intervall lesen / setzen |
 | `GET` | `/api/export.csv` | CSV-Export (`?what=diapers` oder `?what=intakes` für Windeln bzw. Medikamente) |
+| `GET` | `/api/stats?days=14` | Statistik: pro Tag, je Tagesstunde, Abstände, Seiten (1..90 Tage, Ortszeit) |
 
 Neu in `GET /api/state`: `summary_24h` (Tagesbilanz), `medications` und `medications_due`. `POST /api/feeds` und
 `POST /api/medications/:id/intakes` kennen `on_duplicate` (`ask`, `force`, `skip`): Liegt schon ein Eintrag weniger als
