@@ -11,13 +11,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import * as growth from './lib/growth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const GROWTH_DIR = path.join(__dirname, 'growth');
 const VERSION = readVersion();
 
 const SIDES = new Set(['left', 'right', 'both', 'bottle']);
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_REF_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_NOTE_LENGTH = 1000;
 const MAX_FUTURE_MS = 5 * 60 * 1000;
 const INTERVAL_MIN = 30;
@@ -39,6 +42,14 @@ const MED_SEEDS = [
   { name: 'Paracetamol', dose: '1 g', max_per_day: 4, min_gap_minutes: 360 },
   { name: 'Ibuprofen', dose: '400 mg', max_per_day: 4, min_gap_minutes: 360 },
   { name: 'Magenschutz (PPI)', dose: '1 Tablette', max_per_day: 1, min_gap_minutes: 1200 },
+];
+
+const MEASURE_SOURCES = new Set(['nurse', 'doctor', 'home', 'hospital']);
+const GROWTH_RANGE_MAX = 1826;
+const REF_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const PROFILE_KEYS = [
+  'name', 'sex', 'birth_date', 'gestation_weeks', 'gestation_days', 'birth_weight_g', 'birth_length_cm',
+  'birth_hc_cm', 'mother_height_cm', 'father_height_cm', 'ref',
 ];
 
 const MIME_TYPES = {
@@ -206,6 +217,27 @@ function openDatabase(dataDir, defaultIntervalMinutes) {
     CREATE INDEX IF NOT EXISTS idx_med_intakes_med_at ON med_intakes(medication_id, at);
     CREATE INDEX IF NOT EXISTS idx_med_intakes_at ON med_intakes(at);
   `);
+  // Erweiterung 4: Wachstum (Messungen und importierte Referenzkurven)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS measurements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      weight_g INTEGER,
+      length_cm REAL,
+      hc_cm REAL,
+      source TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_measurements_date ON measurements(date);
+    CREATE TABLE IF NOT EXISTS growth_refs (
+      id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
   db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
     .run('interval_minutes', String(defaultIntervalMinutes));
   seedMedications(db);
@@ -311,6 +343,23 @@ function createRepo(db) {
     ),
     intakeUpdate: db.prepare('UPDATE med_intakes SET at = ?, note = ? WHERE id = ?'),
     intakeRemove: db.prepare('DELETE FROM med_intakes WHERE id = ?'),
+
+    measAll: db.prepare('SELECT * FROM measurements ORDER BY date ASC, id ASC'),
+    measById: db.prepare('SELECT * FROM measurements WHERE id = ?'),
+    measInsert: db.prepare(
+      'INSERT INTO measurements (date, weight_g, length_cm, hc_cm, source, note, created_at, updated_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ),
+    measUpdate: db.prepare(
+      'UPDATE measurements SET date = ?, weight_g = ?, length_cm = ?, hc_cm = ?, source = ?, note = ?, updated_at = ? WHERE id = ?',
+    ),
+    measRemove: db.prepare('DELETE FROM measurements WHERE id = ?'),
+    refAll: db.prepare('SELECT id, data FROM growth_refs ORDER BY created_at ASC, id ASC'),
+    refUpsert: db.prepare(
+      'INSERT INTO growth_refs (id, data, created_at, updated_at) VALUES (?, ?, ?, ?) ' +
+        'ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at',
+    ),
+    refRemove: db.prepare('DELETE FROM growth_refs WHERE id = ?'),
 
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     setSetting: db.prepare(
@@ -446,6 +495,66 @@ function createRepo(db) {
     removeIntake(id) {
       return stmts.intakeRemove.run(id).changes > 0;
     },
+
+    // --- growth ---
+    getProfile() {
+      const row = stmts.getSetting.get('growth_profile');
+      if (!row) return {};
+      try {
+        const p = JSON.parse(row.value);
+        return p && typeof p === 'object' ? p : {};
+      } catch {
+        return {};
+      }
+    },
+    setProfile(profile) {
+      stmts.setSetting.run('growth_profile', JSON.stringify(profile));
+    },
+    allMeasurements() {
+      return stmts.measAll.all().map(measurementRow);
+    },
+    measurementById(id) {
+      const row = stmts.measById.get(id);
+      return row ? measurementRow(row) : null;
+    },
+    insertMeasurement(m) {
+      const ts = nowIso();
+      const { lastInsertRowid } = stmts.measInsert.run(
+        m.date, m.weight_g, m.length_cm, m.hc_cm, m.source, m.note, ts, ts,
+      );
+      return measurementRow(stmts.measById.get(Number(lastInsertRowid)));
+    },
+    updateMeasurement(id, m) {
+      stmts.measUpdate.run(m.date, m.weight_g, m.length_cm, m.hc_cm, m.source, m.note, nowIso(), id);
+      return measurementRow(stmts.measById.get(id));
+    },
+    removeMeasurement(id) {
+      return stmts.measRemove.run(id).changes > 0;
+    },
+    importedRefs() {
+      return stmts.refAll.all();
+    },
+    saveRef(id, data) {
+      const ts = nowIso();
+      stmts.refUpsert.run(id, JSON.stringify(data), ts, ts);
+    },
+    removeRef(id) {
+      return stmts.refRemove.run(id).changes > 0;
+    },
+  };
+}
+
+function measurementRow(row) {
+  return {
+    id: Number(row.id),
+    date: row.date,
+    weight_g: row.weight_g === null ? null : Number(row.weight_g),
+    length_cm: row.length_cm === null ? null : Number(row.length_cm),
+    hc_cm: row.hc_cm === null ? null : Number(row.hc_cm),
+    source: row.source ?? null,
+    note: row.note ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -486,7 +595,7 @@ function sendEmpty(res, status, extraHeaders = {}) {
   res.end();
 }
 
-function readJsonBody(req) {
+function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -498,11 +607,11 @@ function readJsonBody(req) {
     };
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         // Stop buffering, drain the rest so the 413 response can be delivered.
         chunks.length = 0;
         req.resume();
-        fail(new HttpError(413, 'Request body too large (max 64 KB)'));
+        fail(new HttpError(413, `Request body too large (max ${Math.round(maxBytes / 1024)} KB)`));
         return;
       }
       chunks.push(chunk);
@@ -814,6 +923,365 @@ function medicationViews(repo, nowMs) {
   return repo.allMedications().map((med) => medicationView(repo, med, nowMs));
 }
 
+// ---------------------------------------------------------------------------
+// Wachstum (docs/API.md, Erweiterung 4)
+// ---------------------------------------------------------------------------
+
+function localYmd(timeZone, date = new Date()) {
+  const p = wallClockParts(date, timeZone);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+function shiftYmd(ymd, days) {
+  const d = new Date((growth.dayNumber(ymd) + days) * DAY_MS);
+  return d.toISOString().slice(0, 10);
+}
+
+function validateYmd(value, field, todayYmd) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new HttpError(400, `${field} must be a date YYYY-MM-DD`);
+  }
+  const n = growth.dayNumber(value);
+  if (!Number.isFinite(n) || new Date(n * DAY_MS).toISOString().slice(0, 10) !== value) {
+    throw new HttpError(400, `${field} is not a valid date`);
+  }
+  if (value < '2000-01-01') throw new HttpError(400, `${field} must not be before 2000-01-01`);
+  if (value > shiftYmd(todayYmd, 1)) throw new HttpError(400, `${field} must not be in the future`);
+  return value;
+}
+
+function validateRange(value, field, min, max, { integer = false, digits = 1 } = {}) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new HttpError(400, `${field} must be a number or null`);
+  if (integer && !Number.isInteger(value)) throw new HttpError(400, `${field} must be an integer`);
+  if (value < min || value > max) throw new HttpError(400, `${field} must be between ${min} and ${max}`);
+  return integer ? value : Number(value.toFixed(digits));
+}
+
+function validateProfilePatch(body, current, refs, todayYmd) {
+  const keys = PROFILE_KEYS.filter((k) => k in body);
+  if (!keys.length) throw new HttpError(400, `Body must contain at least one of: ${PROFILE_KEYS.join(', ')}`);
+  const next = { ...current };
+  for (const k of keys) {
+    const v = body[k];
+    switch (k) {
+      case 'name':
+        if (v === null || v === '') next.name = null;
+        else if (typeof v !== 'string' || v.trim().length > 40) throw new HttpError(400, 'name must be a string of at most 40 characters');
+        else next.name = v.trim() || null;
+        break;
+      case 'sex':
+        if (v !== null && v !== 'male' && v !== 'female') throw new HttpError(400, 'sex must be male, female or null');
+        next.sex = v;
+        break;
+      case 'birth_date':
+        next.birth_date = v === null ? null : validateYmd(v, 'birth_date', todayYmd);
+        break;
+      case 'gestation_weeks':
+        next.gestation_weeks = validateRange(v, k, 22, 44, { integer: true });
+        break;
+      case 'gestation_days':
+        next.gestation_days = validateRange(v, k, 0, 6, { integer: true });
+        break;
+      case 'birth_weight_g':
+        next.birth_weight_g = validateRange(v, k, 300, 7000, { integer: true });
+        break;
+      case 'birth_length_cm':
+        next.birth_length_cm = validateRange(v, k, 25, 65);
+        break;
+      case 'birth_hc_cm':
+        next.birth_hc_cm = validateRange(v, k, 18, 45);
+        break;
+      case 'mother_height_cm':
+      case 'father_height_cm':
+        next[k] = validateRange(v, k, 120, 230);
+        break;
+      case 'ref':
+        if (v === null) next.ref = null;
+        else if (typeof v !== 'string' || !refs.has(v)) throw new HttpError(400, 'ref must be the id of a growth reference');
+        else next.ref = v;
+        break;
+      default:
+        break;
+    }
+  }
+  return next;
+}
+
+function validateMeasurement(body, existing, todayYmd) {
+  const pick = (k, fn) => (k in body ? fn(body[k]) : existing ? existing[k] : null);
+  const m = {
+    date: 'date' in body || !existing ? validateYmd(body.date, 'date', todayYmd) : existing.date,
+    weight_g: pick('weight_g', (v) => validateRange(v, 'weight_g', 300, 30000, { integer: true })),
+    length_cm: pick('length_cm', (v) => validateRange(v, 'length_cm', 25, 130)),
+    hc_cm: pick('hc_cm', (v) => validateRange(v, 'hc_cm', 18, 60)),
+    source: pick('source', (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      if (typeof v !== 'string' || !MEASURE_SOURCES.has(v)) {
+        throw new HttpError(400, `source must be one of: ${[...MEASURE_SOURCES].join(', ')} or null`);
+      }
+      return v;
+    }),
+    note: pick('note', validateNote),
+  };
+  if (m.weight_g === null && m.length_cm === null && m.hc_cm === null) {
+    throw new HttpError(400, 'At least one of weight_g, length_cm, hc_cm is required');
+  }
+  return m;
+}
+
+// Eingebaute Kurven (growth/*.json) plus importierte (SQLite), dänischer Platzhalter bis zum Import.
+function createRefRegistry(repo, dir) {
+  const builtin = growth.loadBuiltinRefs(dir);
+  let imported = null;
+  function load() {
+    if (imported) return imported;
+    imported = new Map();
+    for (const row of repo.importedRefs()) {
+      try {
+        const ref = growth.normalizeRef(JSON.parse(row.data));
+        ref.id = row.id;
+        ref.builtin = false;
+        imported.set(row.id, ref);
+      } catch (err) {
+        console.error(`Wachstum: importierte Kurve ${row.id} defekt – ${err.message}`);
+      }
+    }
+    return imported;
+  }
+  return {
+    get(id) {
+      return builtin.get(id) ?? load().get(id) ?? null;
+    },
+    has(id) {
+      return !!this.get(id);
+    },
+    imported(id) {
+      return load().get(id) ?? null;
+    },
+    list() {
+      const out = [...builtin.values()].map((r) => growth.refSummary(r));
+      const imp = load();
+      if (!imp.has('dk')) out.push(growth.refSummary(growth.DK_PLACEHOLDER, false));
+      for (const r of imp.values()) out.push(growth.refSummary(r));
+      return out;
+    },
+    save(ref) {
+      const { builtin: _b, ...data } = ref;
+      repo.saveRef(ref.id, data);
+      imported = null;
+    },
+    remove(id) {
+      const ok = repo.removeRef(id);
+      imported = null;
+      return ok;
+    },
+    isBuiltin(id) {
+      return builtin.has(id);
+    },
+  };
+}
+
+function nextCustomRefId(refs) {
+  for (let i = 1; i < 1000; i++) {
+    const id = `eigene-${i}`;
+    if (!refs.has(id)) return id;
+  }
+  throw new HttpError(409, 'Too many imported references');
+}
+
+function buildImportedRef(body, refs) {
+  let id = body.id;
+  if (id === undefined || id === null || id === '') id = nextCustomRefId(refs);
+  if (typeof id !== 'string' || !REF_ID_RE.test(id)) throw new HttpError(400, 'id must match [a-z0-9-], max 32 characters');
+  if (refs.isBuiltin(id)) throw new HttpError(400, `${id} is a built-in reference and cannot be replaced`);
+  const isDk = id === 'dk';
+  const base = isDk ? growth.DK_PLACEHOLDER : {};
+  const text = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+
+  let incoming;
+  try {
+    if (body.data && typeof body.data === 'object') {
+      incoming = growth.normalizeRef({ ...base, ...body.data, id });
+    } else if (typeof body.csv === 'string') {
+      const parsed = growth.parseCsvRef(body.csv, {
+        age_unit: body.age_unit, measure: body.measure, sex: body.sex,
+      });
+      incoming = growth.normalizeRef({ ...base, id, measures: parsed.measures });
+    } else {
+      throw new HttpError(400, 'Body must contain csv (text) or data (reference object)');
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(400, err.message);
+  }
+
+  // Bestehende importierte Kurve gleicher Kennung ergänzen (z. B. Gewicht und Länge getrennt importiert)
+  const existing = body.replace === true ? null : refs.imported(id);
+  const measures = existing ? structuredClone(existing.measures) : {};
+  for (const [m, entry] of Object.entries(incoming.measures)) {
+    measures[m] = { ...(measures[m] || {}), ...entry };
+  }
+  const merged = growth.normalizeRef({
+    ...(existing || base),
+    id,
+    name: text(body.name, 40) ?? existing?.name ?? base.name ?? 'Eigene Kurve',
+    title: text(body.title, 120) ?? existing?.title ?? base.title ?? null,
+    description: text(body.description, 400) ?? existing?.description ?? base.description ?? null,
+    source: text(body.source, 600) ?? existing?.source ?? base.source ?? null,
+    kind: 'reference',
+    lines: incoming.lines !== growth.SD_LINES ? incoming.lines : existing?.lines ?? base.lines ?? growth.SD_LINES,
+    measures,
+    adult_height: body.data?.adult_height ?? null,
+  });
+  return merged;
+}
+
+function growthContext(repo, refs, url) {
+  const profile = repo.getProfile();
+  const wanted = url?.searchParams.get('ref') || profile.ref || 'who';
+  const ref = refs.get(wanted) ?? refs.get('who');
+  return { profile, wanted, ref };
+}
+
+function buildGrowth(repo, refs, timeZone, url) {
+  const { profile, wanted, ref } = growthContext(repo, refs, url);
+  const rawRange = url.searchParams.get('range_days');
+  let rangeDays = null;
+  if (rawRange !== null && rawRange !== '') {
+    if (!/^\d+$/.test(rawRange)) throw new HttpError(400, 'range_days must be a positive integer');
+    rangeDays = Math.min(GROWTH_RANGE_MAX, Math.max(28, Number.parseInt(rawRange, 10)));
+  }
+  const analysis = growth.analyze({
+    profile, measurements: repo.allMeasurements(), ref, todayYmd: localYmd(timeZone), rangeDays,
+  });
+  return {
+    profile: profileView(profile),
+    ref: ref ? growth.refSummary(ref) : null,
+    ref_requested: wanted,
+    ref_unavailable: ref && ref.id !== wanted ? wanted : null,
+    refs: refs.list(),
+    today: localYmd(timeZone),
+    ...analysis,
+  };
+}
+
+function profileView(p) {
+  const out = {};
+  for (const k of PROFILE_KEYS) out[k] = p[k] ?? null;
+  return out;
+}
+
+// Kurzfassung für /api/state und Home Assistant
+function growthBrief(repo, refs, timeZone) {
+  const { profile, ref } = growthContext(repo, refs, null);
+  if (!profile.birth_date) return null;
+  const a = growth.analyze({
+    profile, measurements: repo.allMeasurements(), ref, todayYmd: localYmd(timeZone), rangeDays: 28,
+  });
+  const lw = a.latest.weight;
+  const lastGain = a.gains.at(-1) ?? null;
+  return {
+    ref: ref ? ref.id : null,
+    age_days: a.age_days,
+    corrected_age_days: a.corrected_age_days,
+    weight_g: lw ? lw.value : null,
+    weight_date: lw ? lw.date : null,
+    weight_percentile: lw?.p ?? null,
+    length_cm: a.latest.length?.value ?? null,
+    length_percentile: a.latest.length?.p ?? null,
+    hc_cm: a.latest.hc?.value ?? null,
+    hc_percentile: a.latest.hc?.p ?? null,
+    gain_g_per_week: lastGain ? lastGain.g_per_week : null,
+  };
+}
+
+async function handleGrowth(req, res, url, ctx) {
+  const { repo, timeZone, refs } = ctx;
+  const { method } = req;
+  const p = url.pathname;
+
+  if (p === '/api/growth') {
+    if (method === 'GET') return sendJson(res, 200, buildGrowth(repo, refs, timeZone, url));
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  if (p === '/api/growth/profile') {
+    if (method === 'GET') return sendJson(res, 200, { profile: profileView(repo.getProfile()) });
+    if (method === 'PUT' || method === 'PATCH') {
+      const body = await readJsonBody(req);
+      const next = validateProfilePatch(body, repo.getProfile(), refs, localYmd(timeZone));
+      repo.setProfile(next);
+      return sendJson(res, 200, { profile: profileView(next) });
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  if (p === '/api/growth/measurements') {
+    if (method === 'GET') return sendJson(res, 200, { measurements: repo.allMeasurements() });
+    if (method === 'POST') {
+      const body = await readJsonBody(req);
+      const m = validateMeasurement(body, null, localYmd(timeZone));
+      return sendJson(res, 201, { measurement: repo.insertMeasurement(m) });
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  const measMatch = /^\/api\/growth\/measurements\/([^/]+)$/.exec(p);
+  if (measMatch) {
+    const id = parseId(measMatch[1], 'Measurement not found');
+    const existing = repo.measurementById(id);
+    if (method === 'GET') {
+      if (!existing) throw new HttpError(404, 'Measurement not found');
+      return sendJson(res, 200, { measurement: existing });
+    }
+    if (method === 'PATCH') {
+      const body = await readJsonBody(req);
+      if (!existing) throw new HttpError(404, 'Measurement not found');
+      const fields = ['date', 'weight_g', 'length_cm', 'hc_cm', 'source', 'note'];
+      if (!fields.some((k) => k in body)) throw new HttpError(400, `Body must contain at least one of: ${fields.join(', ')}`);
+      const m = validateMeasurement(body, existing, localYmd(timeZone));
+      return sendJson(res, 200, { measurement: repo.updateMeasurement(id, m) });
+    }
+    if (method === 'DELETE') {
+      if (!repo.removeMeasurement(id)) throw new HttpError(404, 'Measurement not found');
+      return sendEmpty(res, 204);
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  if (p === '/api/growth/refs') {
+    if (method === 'GET') return sendJson(res, 200, { refs: refs.list() });
+    if (method === 'POST') {
+      const body = await readJsonBody(req, MAX_REF_BODY_BYTES);
+      const ref = buildImportedRef(body, refs);
+      refs.save(ref);
+      return sendJson(res, 201, { ref: growth.refSummary(refs.get(ref.id)) });
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  const refMatch = /^\/api\/growth\/refs\/([^/]+)$/.exec(p);
+  if (refMatch) {
+    const id = refMatch[1];
+    if (method === 'GET') {
+      const ref = refs.get(id);
+      if (!ref) throw new HttpError(404, 'Reference not found');
+      return sendJson(res, 200, { ref });
+    }
+    if (method === 'DELETE') {
+      if (refs.isBuiltin(id)) throw new HttpError(400, 'Built-in references cannot be deleted');
+      if (!refs.remove(id)) throw new HttpError(404, 'Reference not found');
+      const profile = repo.getProfile();
+      if (profile.ref === id) repo.setProfile({ ...profile, ref: null });
+      return sendEmpty(res, 204);
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  throw new HttpError(404, 'Not found');
+}
+
 async function handleApi(req, res, url, ctx) {
   const { repo, timeZone, duplicateMinutes } = ctx;
   const { method } = req;
@@ -824,7 +1292,13 @@ async function handleApi(req, res, url, ctx) {
   }
 
   if (p === '/api/state' && method === 'GET') {
-    return sendJson(res, 200, buildState(repo, timeZone));
+    const st = buildState(repo, timeZone);
+    st.growth = growthBrief(repo, ctx.refs, timeZone);
+    return sendJson(res, 200, st);
+  }
+
+  if (p === '/api/growth' || p.startsWith('/api/growth/')) {
+    return handleGrowth(req, res, url, ctx);
   }
 
   if (p === '/api/feeds') {
@@ -1083,7 +1557,15 @@ async function handleApi(req, res, url, ctx) {
         repo.allIntakes(),
       );
     }
-    throw new HttpError(400, 'what must be one of: feeds, diapers, intakes');
+    if (what === 'measurements') {
+      return sendCsv(
+        res,
+        'boobo-wachstum.csv',
+        ['id', 'date', 'weight_g', 'length_cm', 'hc_cm', 'source', 'note'],
+        repo.allMeasurements(),
+      );
+    }
+    throw new HttpError(400, 'what must be one of: feeds, diapers, intakes, measurements');
   }
 
   throw new HttpError(404, 'Not found');
@@ -1291,6 +1773,7 @@ export function createServer({
   dataDir = process.env.DATA_DIR || path.join(__dirname, 'data'),
   intervalMinutes = Number.parseInt(process.env.FEED_INTERVAL_MINUTES || '180', 10) || 180,
   publicDir = PUBLIC_DIR,
+  growthDir = GROWTH_DIR,
   duplicateMinutes = parseDuplicateMinutes(process.env.FEED_DUPLICATE_MINUTES),
   httpsPort = parseHttpsPort(process.env.HTTPS_PORT),
   tlsDir = process.env.TLS_DIR || path.join(dataDir, 'tls'),
@@ -1321,7 +1804,8 @@ export function createServer({
     }
   }
 
-  const ctx = { repo, timeZone, duplicateMinutes, https: httpsInfo };
+  const refs = createRefRegistry(repo, growthDir);
+  const ctx = { repo, timeZone, duplicateMinutes, https: httpsInfo, refs };
 
   const handler = async (req, res) => {
     const started = process.hrtime.bigint();
