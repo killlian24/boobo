@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Boobo</title>
   <meta name="description" content="Boobo – minimaler Still-Tracker">
   <meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
@@ -43,9 +43,10 @@
       </svg>
     </button>
   </header>
+  <div id="ptr" class="ptr" aria-live="polite"><span class="ptr-ring" aria-hidden="true"></span><span id="ptr-text"></span></div>
 
   <main class="app view" id="view-home">
-    <section id="status" class="status card" aria-live="polite">
+    <section id="status" class="status card loading" aria-live="polite" aria-busy="true">
       <div class="status-main">
         <div class="ring-wrap">
           <svg class="ring" viewBox="0 0 116 116" aria-hidden="true">
@@ -57,12 +58,12 @@
             </g>
           </svg>
           <div class="ring-center">
-            <div id="status-time" class="status-time">–:–</div>
+            <div id="status-time" class="status-time"></div>
             <div id="status-side" class="status-side"></div>
           </div>
         </div>
         <div class="status-text">
-          <div id="status-rel" class="status-rel">Lade …</div>
+          <div id="status-rel" class="status-rel"></div>
           <div id="status-next" class="status-next"></div>
         </div>
       </div>
@@ -114,7 +115,11 @@
 
     <section class="history" aria-label="Bisher">
       <h2 class="section-title">Bisher</h2>
-      <div id="history"></div>
+      <div id="history">
+        <div class="skel-list" aria-busy="true" aria-label="Lade">
+          <span class="skel skel-row"></span><span class="skel skel-row"></span><span class="skel skel-row"></span>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -122,6 +127,11 @@
     <div class="growth-head">
       <h2 id="growth-title" class="page-title">Wachstum</h2>
       <p id="growth-age" class="page-sub"></p>
+    </div>
+
+    <div id="growth-skeleton" aria-busy="true" aria-label="Lade">
+      <div class="growth-actions"><span class="skel skel-btn"></span><span class="skel skel-btn"></span></div>
+      <div class="card growth-chart-card"><span class="skel skel-line"></span><span class="skel skel-chart"></span></div>
     </div>
 
     <section id="growth-setup" class="card growth-setup" hidden>

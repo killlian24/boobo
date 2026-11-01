@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.1.0';
+  var APP_VERSION = '1.2.0';
   var REFRESH_MS = 30000;
   var TICK_MS = 60000;
   var TOAST_MS = 10000;
@@ -203,7 +203,7 @@
     }).catch(function (err) {
       // Netzwerkfehler (TypeError) oder Serverfehler → Banner
       setOnline(false);
-      if (!state.state) renderStatus();
+      if (!state.state) { renderStatus(); renderHistory(); }
       console.warn('refresh failed', err);
     }).then(function () {
       refreshing = null;
@@ -281,12 +281,14 @@
     var nextEl = $('#status-next');
     var sugEl = $('#status-suggest');
 
-    box.classList.remove('overdue', 'warn', 'empty');
+    box.classList.remove('overdue', 'warn', 'empty', 'loading');
+    box.removeAttribute('aria-busy');
 
     if (!s) {
-      timeEl.textContent = '–:–';
+      timeEl.textContent = state.online ? '' : '–:–';
       sideEl.textContent = '';
-      relEl.textContent = state.online ? 'Lade …' : 'Keine Daten';
+      relEl.textContent = state.online ? '' : 'Keine Daten';
+      box.classList.toggle('loading', state.online);
       nextEl.textContent = '';
       sugEl.textContent = '';
       ring.style.strokeDashoffset = RING_LEN;
@@ -693,18 +695,50 @@
   // ---------- Dialoge ----------
 
   var dialogStack = [];
+  // Sheets: native <dialog> (Fokus, Escape, Top-Layer) mit Griff, Ein- und Ausfahren und Wegwischen nach unten.
+  var SHEET_OUT_MS = 200;
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+  }
   function openDialog(dlg) {
+    if (dlg._closing) finishClose(dlg);
     if (dlg.open) return;
+    dlg.scrollTop = 0;
+    dlg.classList.remove('shown');
     if (typeof dlg.showModal === 'function') dlg.showModal();
     else dlg.setAttribute('open', '');
+    // Nach dem Einfahren Animation abschalten, sonst startet sie nach Ziehen oder Zurückschnappen neu
+    if (reducedMotion()) dlg.classList.add('shown');
+    else setTimeout(function () { if (dlg.open && !dlg._closing) dlg.classList.add('shown'); }, 300);
     var i = dialogStack.indexOf(dlg);
     if (i >= 0) dialogStack.splice(i, 1);
     dialogStack.push(dlg);
   }
-  function closeDialog(dlg) {
-    if (!dlg.open) return;
-    if (typeof dlg.close === 'function') dlg.close();
-    else dlg.removeAttribute('open');
+  // fromDrag: das Sheet wurde schon ein Stück heruntergezogen und fährt von dort aus weiter
+  function closeDialog(dlg, fromDrag) {
+    if (!dlg.open || dlg._closing) return;
+    var i = dialogStack.indexOf(dlg);
+    if (i >= 0) dialogStack.splice(i, 1);
+    if (reducedMotion() || !dlg.classList.contains('sheet')) { finishClose(dlg); return; }
+    dlg._closing = true;
+    dlg.classList.remove('shown');
+    if (fromDrag) {
+      dlg.classList.add('snap', 'closing-drag');
+      dlg.style.transform = 'translateY(100%)';
+    } else {
+      dlg.classList.add('closing');
+    }
+    dlg._closeTimer = setTimeout(function () { finishClose(dlg); }, SHEET_OUT_MS);
+  }
+  function finishClose(dlg) {
+    clearTimeout(dlg._closeTimer);
+    dlg._closing = false;
+    dlg.classList.remove('closing', 'closing-drag', 'snap', 'dragging', 'shown');
+    dlg.style.transform = '';
+    if (dlg.open) {
+      if (typeof dlg.close === 'function') dlg.close();
+      else dlg.removeAttribute('open');
+    }
     onDialogClosed(dlg);
   }
   function onDialogClosed(dlg) {
@@ -717,6 +751,56 @@
       var host = dialogStack.length ? dialogStack[dialogStack.length - 1] : document.body;
       host.appendChild(t);
     }
+  }
+
+  // Nach unten wischen schließt: nur wenn der Inhalt ganz oben steht, erst ab 8 px, damit Tippen und Scrollen bleiben.
+  function initSheetDrag(dlg) {
+    var y0 = 0, t0 = 0, startTop = 0, dy = 0, dragging = false, tracking = false;
+    dlg.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1 || dlg._closing) { tracking = false; return; }
+      var tag = e.target && e.target.tagName;
+      tracking = tag !== 'TEXTAREA' && tag !== 'SELECT';
+      y0 = e.touches[0].clientY;
+      t0 = Date.now();
+      startTop = dlg.scrollTop;
+      dy = 0;
+      dragging = false;
+    }, { passive: true });
+    dlg.addEventListener('touchmove', function (e) {
+      if (!tracking) return;
+      dy = e.touches[0].clientY - y0;
+      if (!dragging) {
+        if (dy > 8 && startTop <= 0 && dlg.scrollTop <= 0) {
+          dragging = true;
+          dlg.classList.add('dragging');
+          var a = document.activeElement;
+          if (a && dlg.contains(a) && a.blur) a.blur();
+        } else if (Math.abs(dy) > 8) {
+          tracking = false;
+          return;
+        } else return;
+      }
+      e.preventDefault();
+      dlg.style.transform = 'translateY(' + Math.max(0, dy - 8) + 'px)';
+    }, { passive: false });
+    function end() {
+      if (!dragging) { tracking = false; return; }
+      dragging = false;
+      tracking = false;
+      var dist = Math.max(0, dy - 8);
+      var speed = dist / Math.max(1, Date.now() - t0);
+      dlg.classList.remove('dragging');
+      armSwallow(350); // der Klick nach dem Loslassen soll nichts auslösen
+      if (dist > Math.min(140, dlg.offsetHeight * 0.3) || (speed > 0.6 && dist > 40)) {
+        closeDialog(dlg, true);
+      } else {
+        dlg.classList.add('snap');
+        dlg.style.transform = '';
+        setTimeout(function () { dlg.classList.remove('snap'); }, SHEET_OUT_MS);
+      }
+    }
+    dlg.addEventListener('touchend', end);
+    dlg.addEventListener('touchcancel', end);
   }
 
   // Wiederverwendbare Rückfrage. opts: { title, text, yes, no, danger } → Promise<boolean>
@@ -755,6 +839,8 @@
   function initDialogs() {
     $$('dialog').forEach(function (dlg) {
       dlg.addEventListener('close', function () { onDialogClosed(dlg); });
+      // Escape fährt das Sheet aus, statt es hart zu schließen
+      dlg.addEventListener('cancel', function (e) { e.preventDefault(); closeDialog(dlg); });
       $$('[data-close]', dlg).forEach(function (b) {
         b.addEventListener('click', function () { closeDialog(dlg); });
       });
@@ -762,6 +848,13 @@
       dlg.addEventListener('click', function (e) {
         if (e.target === dlg) closeDialog(dlg);
       });
+      if (dlg.classList.contains('sheet')) {
+        var grip = document.createElement('div');
+        grip.className = 'sheet-grip';
+        grip.setAttribute('aria-hidden', 'true');
+        dlg.insertBefore(grip, dlg.firstChild);
+        initSheetDrag(dlg);
+      }
     });
     $$('.segmented').forEach(segInit);
   }
@@ -1489,10 +1582,14 @@
   // ---------- Ansichten (Tabs) ----------
 
   var currentView = 'home';
+  var LS_TAB = 'boobo.tab';
+  var scrollMem = { home: 0, growth: 0 };
   function showView(name, fromHash) {
     if (name !== 'growth') name = 'home';
     var changed = name !== currentView;
+    if (changed) scrollMem[currentView] = window.scrollY;
     currentView = name;
+    lsSet(LS_TAB, name === 'growth' ? 'growth' : null);
     $('#view-home').hidden = name !== 'home';
     $('#view-growth').hidden = name !== 'growth';
     $$('.tab').forEach(function (t) {
@@ -1505,7 +1602,14 @@
         try { history.pushState(null, '', hash || location.pathname + location.search); } catch (e) { location.hash = hash; }
       }
     }
-    if (changed) window.scrollTo(0, 0);
+    if (changed) {
+      // jede Ansicht behält ihre Scrollposition, wie bei Tabs in Apps
+      window.scrollTo(0, scrollMem[name] || 0);
+      var v = $(name === 'growth' ? '#view-growth' : '#view-home');
+      v.classList.remove('view-in');
+      void v.offsetWidth;
+      v.classList.add('view-in');
+    }
     if (name === 'growth') loadGrowth();
   }
   function viewFromHash() { return location.hash === '#wachstum' ? 'growth' : 'home'; }
@@ -1516,6 +1620,7 @@
     var p = g.profile || {};
     $('#growth-title').textContent = p.name ? 'Wachstum · ' + p.name : 'Wachstum';
     var ready = !!p.birth_date;
+    $('#growth-skeleton').hidden = true;
     $('#growth-setup').hidden = ready;
     $('#growth-content').hidden = !ready;
     var age = '';
@@ -2061,7 +2166,12 @@
     });
     window.addEventListener('popstate', function () { showView(viewFromHash(), true); });
     window.addEventListener('hashchange', function () { showView(viewFromHash(), true); });
-    if (viewFromHash() === 'growth') showView('growth', true);
+    // Start: Adresse (#wachstum) vor dem zuletzt offenen Tab
+    var startView = location.hash ? viewFromHash() : (lsGet(LS_TAB) === 'growth' ? 'growth' : 'home');
+    if (startView === 'growth') {
+      if (location.hash !== '#wachstum') { try { history.replaceState(null, '', '#wachstum'); } catch (e) { /* egal */ } }
+      showView('growth', true);
+    }
     $('#btn-growth-measure').addEventListener('click', function () { openMeasure(null); });
     $('#btn-growth-profile').addEventListener('click', openProfile);
     $('#btn-settings-profile').addEventListener('click', function () {
@@ -2194,6 +2304,76 @@
     body.appendChild(mk('p', 'hint', 'Die alte Verknüpfung könnt ihr löschen. Der Hinweis zum Chrome-Schalter von früher gilt nicht mehr.'));
   }
 
+  // ---------- Ziehen zum Aktualisieren ----------
+  // Der Browser darf die Seite nicht mehr neu laden (overscroll-behavior in app.css); stattdessen holt Boobo die Daten neu.
+
+  var PULL_AT = 64;
+  function initPull() {
+    var ptr = $('#ptr');
+    var label = $('#ptr-text');
+    var y0 = null, dist = 0, busy = false;
+    function set(h, text, cls) {
+      ptr.style.height = h + 'px';
+      ptr.className = 'ptr' + (cls ? ' ' + cls : '');
+      label.textContent = text || '';
+    }
+    document.addEventListener('touchstart', function (e) {
+      if (busy || dialogStack.length || e.touches.length !== 1 || window.scrollY > 0) { y0 = null; return; }
+      if (e.target.closest && e.target.closest('.chart, input, textarea, select')) { y0 = null; return; }
+      y0 = e.touches[0].clientY;
+      dist = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (y0 === null) return;
+      var dy = e.touches[0].clientY - y0;
+      if (dy <= 0 || window.scrollY > 0) { if (dist) set(0); dist = 0; if (dy < -8) y0 = null; return; }
+      dist = Math.min(dy * 0.5, 96);
+      set(dist, dist >= PULL_AT ? 'Loslassen zum Aktualisieren' : 'Zum Aktualisieren ziehen', dist >= PULL_AT ? 'ready' : 'pulling');
+    }, { passive: true });
+    function end() {
+      if (y0 === null) return;
+      y0 = null;
+      if (dist < PULL_AT) { set(0); dist = 0; return; }
+      busy = true;
+      vibrate(10);
+      set(44, 'Aktualisiere …', 'loading');
+      var jobs = [refresh()];
+      if (currentView === 'growth') jobs.push(loadGrowth());
+      Promise.all(jobs).catch(function () { /* Banner zeigt Fehler */ }).then(function () {
+        busy = false;
+        dist = 0;
+        set(0);
+      });
+    }
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+
+  // ---------- Neue Version ----------
+
+  function initServiceWorker() {
+    if (!(window.isSecureContext && 'serviceWorker' in navigator)) return;
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('/sw.js').then(function (reg) {
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'activated' && hadController) {
+            showToast('Neue Version von Boobo.', {
+              action: function () { location.reload(); }, actionLabel: 'Neu laden', duration: 30 * 60000
+            });
+          }
+        });
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') reg.update().catch(function () { /* offline */ });
+      });
+    }).catch(function (err) {
+      console.warn('SW registration failed', err);
+    });
+  }
+
   // ---------- Init ----------
 
   function init() {
@@ -2203,6 +2383,9 @@
     initChips();
     initClickSwallow();
     initGrowth();
+    initPull();
+    // iOS Safari zeigt den Druckzustand (:active) nur, wenn es irgendeinen touchstart-Listener gibt
+    document.addEventListener('touchstart', function () {}, { passive: true });
 
     $$('.feed-btn').forEach(function (b) {
       var side = b.getAttribute('data-side');
@@ -2258,11 +2441,7 @@
     window.addEventListener('online', refresh);
     window.addEventListener('offline', function () { setOnline(false); });
 
-    if (window.isSecureContext && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function (err) {
-        console.warn('SW registration failed', err);
-      });
-    }
+    initServiceWorker();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
