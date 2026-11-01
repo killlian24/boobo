@@ -1,0 +1,556 @@
+# Boobo – Home-Assistant-Package (alles in einer Datei)
+#
+# Installation:
+#   1. In configuration.yaml einmalig (falls noch nicht vorhanden):
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   2. Diese Datei als  packages/boobo.yaml  ablegen (Ordner „packages“ neben configuration.yaml).
+#   3. Überall NAS-IP durch die IP des NAS ersetzen, notify.notify ggf. durch notify.mobile_app_<handy>.
+#   4. Entwicklerwerkzeuge → YAML → Konfiguration prüfen → Home Assistant neu starten.
+#
+# Enthält: REST-Sensoren, Template-Entitäten, REST-Befehle, Skripte, input_text und die
+# Automationen „Bobo hat bald Hunger“, „Erinnerung wiederholen“, „Kurz an dich denken“.
+# Die Taster-Automation (automation_taster.yaml) ist nicht enthalten, weil sie einen echten
+# Taster-Sensor braucht; bei Bedarf separat anlegen. Dashboard-Karte: lovelace_card.yaml.
+
+rest:
+  - resource: "http://NAS-IP:8099/api/state"
+    scan_interval: 60
+    timeout: 10
+    sensor:
+      # Sammel-Sensor: Status als Text, alle übrigen Felder als Attribute.
+      # Die Template-Entitäten in template.yaml lesen diese Attribute aus.
+      - name: "Boobo Status"
+        unique_id: boobo_status
+        icon: mdi:baby-bottle-outline
+        value_template: >-
+          {%- if value_json.last is none -%}
+            keine Daten
+          {%- elif value_json.overdue -%}
+            Bobo hat Hunger
+          {%- else -%}
+            ok
+          {%- endif -%}
+        json_attributes:
+          - overdue
+          - suggested_side
+          - today_count
+          - last_24h_count
+          - interval_minutes
+          - minutes_since_last
+          - minutes_until_due
+          - next_due_at
+          - last
+          - now
+          - summary_24h
+          - medications
+          - medications_due
+
+      - name: "Boobo Minuten seit Stillen"
+        unique_id: boobo_minuten_seit_stillen
+        icon: mdi:baby-bottle-outline
+        unit_of_measurement: "min"
+        state_class: measurement
+        availability: "{{ value_json.last is not none }}"
+        value_template: "{{ value_json.minutes_since_last }}"
+
+      - name: "Boobo letzte Seite"
+        unique_id: boobo_letzte_seite
+        icon: mdi:human-female-boy
+        value_template: >-
+          {%- set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} -%}
+          {%- if value_json.last is none -%}–{%- else -%}{{ m.get(value_json.last.side, '–') }}{%- endif -%}
+
+      - name: "Boobo letztes Stillen"
+        unique_id: boobo_letztes_stillen
+        icon: mdi:clock-start
+        device_class: timestamp
+        availability: "{{ value_json.last is not none }}"
+        value_template: "{{ value_json.last.at if value_json.last is not none else none }}"
+
+      - name: "Boobo Bobo meldet sich gegen"
+        unique_id: boobo_naechste_faellig
+        icon: mdi:alarm
+        device_class: timestamp
+        availability: "{{ value_json.next_due_at is not none }}"
+        value_template: "{{ value_json.next_due_at }}"
+
+      # Die rest-Integration kennt keine binary_sensor-Plattform – daher hier als Text,
+      # der echte binary_sensor.boobo_bobo_hat_hunger steht in template.yaml.
+      - name: "Boobo Hunger Text"
+        unique_id: boobo_ueberfaellig_text
+        icon: mdi:alert-circle-outline
+        value_template: "{{ 'Ja' if value_json.overdue else 'Nein' }}"
+
+      # Tagesbilanz (rollierend, letzte 24 Stunden) aus summary_24h
+      - name: "Boobo Pause maximal 24h"
+        unique_id: boobo_laengste_pause
+        icon: mdi:sleep
+        unit_of_measurement: "min"
+        state_class: measurement
+        availability: "{{ value_json.summary_24h is defined and value_json.summary_24h.longest_gap_minutes is not none }}"
+        value_template: "{{ value_json.summary_24h.longest_gap_minutes }}"
+
+      - name: "Boobo Windeln nass 24h"
+        unique_id: boobo_windeln_nass_24h
+        icon: mdi:water
+        unit_of_measurement: "Windeln"
+        state_class: measurement
+        availability: "{{ value_json.summary_24h is defined }}"
+        value_template: "{{ value_json.summary_24h.diapers_wet | int(0) }}"
+
+      - name: "Boobo Windeln voll 24h"
+        unique_id: boobo_windeln_voll_24h
+        icon: mdi:emoticon-poop
+        unit_of_measurement: "Windeln"
+        state_class: measurement
+        availability: "{{ value_json.summary_24h is defined }}"
+        value_template: "{{ value_json.summary_24h.diapers_dirty | int(0) }}"
+
+template:
+  - binary_sensor:
+      - name: "Boobo Bobo hat Hunger"
+        unique_id: boobo_ueberfaellig
+        icon: mdi:baby-bottle-outline
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable', 'keine Daten'] }}"
+        state: "{{ state_attr('sensor.boobo_status', 'overdue') == true }}"
+
+      # Für Mama: geht mindestens ein Medikament gerade wieder? (Erste Einnahme wird nie erinnert,
+      # nach 36 h ohne Einnahme gilt das Mittel als abgesetzt – das regelt der Server.)
+      - name: "Boobo Mama Medikament"
+        unique_id: boobo_medikament
+        icon: mdi:pill
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | length > 0 }}"
+
+    sensor:
+      - name: "Boobo Vorschlag Seite"
+        unique_id: boobo_vorschlag_seite
+        icon: mdi:arrow-decision
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: >-
+          {%- set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} -%}
+          {{ m.get(state_attr('sensor.boobo_status', 'suggested_side'), '–') }}
+
+      - name: "Boobo heute Anzahl"
+        unique_id: boobo_heute_anzahl
+        icon: mdi:counter
+        unit_of_measurement: "Mahlzeiten"
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ state_attr('sensor.boobo_status', 'today_count') | int(0) }}"
+
+      - name: "Boobo letzte 24h"
+        unique_id: boobo_letzte_24h
+        icon: mdi:counter
+        unit_of_measurement: "Mahlzeiten"
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ state_attr('sensor.boobo_status', 'last_24h_count') | int(0) }}"
+
+      # Welche Medikamente gehen gerade wieder, z. B. „Paracetamol 1 g, Ibuprofen 400 mg“
+      - name: "Boobo Mama Medikament Text"
+        unique_id: boobo_medikament_text
+        icon: mdi:pill
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | join(', ') }}"
+
+      - name: "Boobo Stillen 24h"
+        unique_id: boobo_stillen_24h
+        icon: mdi:baby-bottle-outline
+        unit_of_measurement: "Mal"
+        state_class: measurement
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] and state_attr('sensor.boobo_status', 'summary_24h') is mapping }}"
+        state: "{{ state_attr('sensor.boobo_status', 'summary_24h').feeds | int(0) }}"
+
+rest_command:
+  boobo_stillen:
+    url: "http://NAS-IP:8099/api/feeds"
+    method: POST
+    content_type: "application/json"
+    timeout: 10
+    payload: >-
+      {"side": "{{ side }}", "on_duplicate": "skip"{% if note is defined and note %}, "note": "{{ note | replace('"', '') }}"{% endif %}}
+
+  # Letzten Eintrag wieder löschen (z. B. bei versehentlichem Tastendruck).
+  # Braucht die ID aus der Antwort von boobo_stillen (siehe scripts.yaml: script.boobo_rueckgaengig).
+  boobo_loeschen:
+    url: "http://NAS-IP:8099/api/feeds/{{ feed_id }}"
+    method: DELETE
+    timeout: 10
+
+  # Windel notieren (kein Doppelschutz: zwei Windeln kurz hintereinander kommen vor).
+  #   action: rest_command.boobo_windel
+  #   data:
+  #     kind: wet         # wet | dirty
+  boobo_windel:
+    url: "http://NAS-IP:8099/api/diapers"
+    method: POST
+    content_type: "application/json"
+    timeout: 10
+    payload: >-
+      {"kind": "{{ kind }}"}
+
+  # Medikament für Mama als genommen notieren. Die medication_id steht in
+  #   curl http://NAS-IP:8099/api/medications
+  # Mit Doppelschutz: eine Einnahme innerhalb von 10 min nach der letzten wird nicht doppelt gespeichert.
+  #   action: rest_command.boobo_medikament
+  #   data:
+  #     medication_id: 1
+  boobo_medikament:
+    url: "http://NAS-IP:8099/api/medications/{{ medication_id }}/intakes"
+    method: POST
+    content_type: "application/json"
+    timeout: 10
+    payload: >-
+      {"on_duplicate": "skip"}
+
+script:
+  boobo_vorschlag:
+    alias: "Boobo: Stillen notieren (Seite, die dran ist)"
+    description: "Ein Tastendruck notiert die Seite, die Boobo gerade vorschlägt. Für Taster und Fernbedienungen."
+    icon: mdi:baby-bottle-outline
+    mode: single
+    sequence:
+      - variables:
+          side: "{{ state_attr('sensor.boobo_status', 'suggested_side') or 'left' }}"
+      - action: script.boobo_notieren
+        data:
+          side: "{{ side }}"
+          note: "per Taster"
+
+  boobo_links:
+    alias: "Boobo: Links notieren"
+    icon: mdi:alpha-l-circle
+    mode: single
+    sequence:
+      - action: script.boobo_notieren
+        data: { side: left }
+
+  boobo_rechts:
+    alias: "Boobo: Rechts notieren"
+    icon: mdi:alpha-r-circle
+    mode: single
+    sequence:
+      - action: script.boobo_notieren
+        data: { side: right }
+
+  boobo_beide:
+    alias: "Boobo: Beide notieren"
+    icon: mdi:alpha-b-circle
+    mode: single
+    sequence:
+      - action: script.boobo_notieren
+        data: { side: both }
+
+  boobo_flasche:
+    alias: "Boobo: Flasche notieren"
+    icon: mdi:baby-bottle
+    mode: single
+    sequence:
+      - action: script.boobo_notieren
+        data: { side: bottle }
+
+  # Gemeinsamer Unterbau: notieren, Sensoren sofort aktualisieren, kurze Bestätigung schicken,
+  # ID des Eintrags für „Rückgängig“ merken.
+  boobo_notieren:
+    alias: "Boobo: notieren (intern)"
+    mode: queued
+    fields:
+      side:
+        description: "left | right | both | bottle"
+        example: left
+      note:
+        description: "optional"
+        example: "per Taster"
+    sequence:
+      - action: rest_command.boobo_stillen
+        data:
+          side: "{{ side }}"
+          note: "{{ note | default('') }}"
+        response_variable: antwort
+      # Doppelschutz: Hat der Server nichts gespeichert, weil vor Kurzem schon notiert wurde
+      # (`skipped: true`), sagen wir das freundlich und lassen alles andere in Ruhe.
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ antwort is defined and antwort.content is defined
+                     and antwort.content.skipped | default(false) == true }}
+            sequence:
+              - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+                data:
+                  title: "Boobo"
+                  message: >-
+                    Schon notiert, um {{ antwort.content.existing.at | as_timestamp | timestamp_custom('%H:%M') }}.
+                  data:
+                    tag: boobo-notiert
+                    channel: Boobo
+                continue_on_error: true
+        default:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.boobo_letzter_eintrag
+            data:
+              value: "{{ antwort.content.feed.id if antwort is defined and antwort.content is defined else '' }}"
+            continue_on_error: true
+          # Sensoren nicht erst in 60 s, sondern sofort nachziehen
+          - action: homeassistant.update_entity
+            target:
+              entity_id: sensor.boobo_status
+            continue_on_error: true
+          - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+            data:
+              title: "Notiert"
+              message: >-
+                {% set m = {'left': 'Links', 'right': 'Rechts', 'both': 'Beide', 'bottle': 'Flasche'} %}
+                {{ m.get(side, side) }}, {{ now().strftime('%H:%M') }}. Ihr macht das toll.
+              data:
+                tag: boobo-notiert
+                channel: Boobo
+            continue_on_error: true
+
+  boobo_rueckgaengig:
+    alias: "Boobo: letzten Eintrag rückgängig"
+    description: "Löscht den Eintrag, der zuletzt aus Home Assistant notiert wurde."
+    icon: mdi:undo
+    mode: single
+    sequence:
+      - condition: template
+        value_template: "{{ states('input_text.boobo_letzter_eintrag') | int(0) > 0 }}"
+      - action: rest_command.boobo_loeschen
+        data:
+          feed_id: "{{ states('input_text.boobo_letzter_eintrag') }}"
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.boobo_letzter_eintrag
+        data:
+          value: ""
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.boobo_status
+        continue_on_error: true
+
+  # Windeln: ein Tastendruck, ein Eintrag. Kein Doppelschutz, zwei Windeln kurz nacheinander sind real.
+  # „Rückgängig“ gibt es hier nicht – in der App den Eintrag antippen und löschen.
+  boobo_windel_nass:
+    alias: "Boobo: Windel nass notieren"
+    icon: mdi:water
+    mode: queued
+    sequence:
+      - action: rest_command.boobo_windel
+        data: { kind: wet }
+        continue_on_error: true
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.boobo_status
+        continue_on_error: true
+      - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+        data:
+          title: "Nass, {{ now().strftime('%H:%M') }}. Notiert."
+          message: "Alles im Fluss."
+          data:
+            tag: boobo-windel
+            channel: Boobo
+        continue_on_error: true
+
+  boobo_windel_voll:
+    alias: "Boobo: Windel voll notieren"
+    icon: mdi:emoticon-poop
+    mode: queued
+    sequence:
+      - action: rest_command.boobo_windel
+        data: { kind: dirty }
+        continue_on_error: true
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.boobo_status
+        continue_on_error: true
+      - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+        data:
+          title: "Voll, {{ now().strftime('%H:%M') }}. Notiert."
+          message: "Volle Leistung, Bobo."
+          data:
+            tag: boobo-windel
+            channel: Boobo
+        continue_on_error: true
+
+  # Medikament für Mama als genommen notieren.
+  # Aufruf mit der ID aus GET /api/medications:
+  #   action: script.boobo_medikament_genommen
+  #   data:
+  #     medication_id: 1
+  boobo_medikament_genommen:
+    alias: "Boobo: Medikament genommen"
+    description: "Notiert eine Einnahme für Mama (Doppelschutz: innerhalb von 10 min wird nichts doppelt gespeichert)."
+    icon: mdi:pill
+    mode: queued
+    fields:
+      medication_id:
+        description: "ID des Medikaments, siehe http://NAS-IP:8099/api/medications"
+        example: 1
+    sequence:
+      - action: rest_command.boobo_medikament
+        data:
+          medication_id: "{{ medication_id }}"
+        response_variable: antwort
+      # Name für die Meldung: aus der Antwort, sonst aus den Attributen von sensor.boobo_status
+      - variables:
+          name: >-
+            {% set a = antwort.content if antwort is defined and antwort.content is defined else {} %}
+            {% set aus_liste = (state_attr('sensor.boobo_status', 'medications') or [])
+                 | selectattr('id', 'eq', medication_id | int(0)) | map(attribute='name') | first | default('') %}
+            {{ (a.medication.name if a.medication is defined and a.medication else '') or aus_liste or 'Medikament' }}
+          skipped: "{{ antwort is defined and antwort.content is defined and antwort.content.skipped | default(false) == true }}"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ skipped }}"
+            sequence:
+              - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+                data:
+                  title: "Schon notiert"
+                  message: >-
+                    {{ name }}, um {{ antwort.content.existing.at | as_timestamp | timestamp_custom('%H:%M') }}.
+                  data:
+                    tag: boobo-medikament
+                    channel: Boobo
+                continue_on_error: true
+        default:
+          - action: homeassistant.update_entity
+            target:
+              entity_id: sensor.boobo_status
+            continue_on_error: true
+          - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+            data:
+              title: "{{ name }}, {{ now().strftime('%H:%M') }}. Notiert."
+              message: "Gut auf dich aufgepasst."
+              data:
+                tag: boobo-medikament
+                channel: Boobo
+            continue_on_error: true
+
+input_text:
+  boobo_letzter_eintrag:
+    name: "Boobo letzter Eintrag"
+    icon: mdi:identifier
+    max: 20
+
+automation:
+  - id: boobo_erinnerung
+    alias: "Boobo: Bobo hat bald Hunger"
+    description: "Benachrichtigt beide Eltern, wenn seit dem letzten Stillen mehr als das eingestellte Intervall (Standard 3 h) vergangen ist."
+    mode: single
+
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.boobo_bobo_hat_hunger
+        to: "on"
+        for:
+          minutes: 1
+
+    conditions: []
+
+    actions:
+      # Handy 1 – `notify.notify` durch `notify.mobile_app_<handy1>` ersetzen
+      - action: notify.notify
+        data:
+          title: "Bobo hat bald Hunger"
+          message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+          data:
+            tag: boobo-due              # gleiche tag → Benachrichtigung wird ersetzt statt gestapelt
+            channel: Boobo              # Android: eigener Benachrichtigungskanal
+            importance: high            # Android
+            url: "http://NAS-IP:8099"   # iOS: Tippen auf die Benachrichtigung öffnet die App
+            clickAction: "http://NAS-IP:8099"  # Android: dito
+            actions:
+              - action: URI
+                title: "Boobo öffnen"
+                uri: "http://NAS-IP:8099"
+
+      # Handy 2 – Block kopieren und `notify.mobile_app_<handy2>` eintragen:
+      # - action: notify.mobile_app_handy2
+      #   data:
+      #     title: "Bobo hat bald Hunger"
+      #     message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+      #     data:
+      #       tag: boobo-due
+      #       channel: Boobo
+      #       importance: high
+      #       url: "http://NAS-IP:8099"
+      #       clickAction: "http://NAS-IP:8099"
+      #       actions:
+      #         - action: URI
+      #           title: "Boobo öffnen"
+      #           uri: "http://NAS-IP:8099"
+
+  - id: boobo_wiederholung
+    alias: "Boobo: Erinnerung wiederholen"
+    description: "Alle 30 min sanft erinnern, solange Bobo noch wartet."
+    mode: single
+
+    triggers:
+      - trigger: time_pattern
+        minutes: "/30"
+
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.boobo_bobo_hat_hunger
+        state: "on"
+        for:
+          minutes: 30
+      # Optional Nachtruhe:
+      # - condition: time
+      #   after: "07:00:00"
+      #   before: "22:00:00"
+
+    actions:
+      - action: notify.notify
+        data:
+          title: "Bobo wartet noch"
+          message: "Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} min. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+          data:
+            tag: boobo-due
+            channel: Boobo
+            importance: high
+            url: "http://NAS-IP:8099"
+            clickAction: "http://NAS-IP:8099"
+            actions:
+              - action: URI
+                title: "Boobo öffnen"
+                uri: "http://NAS-IP:8099"
+
+  - id: boobo_medikamente
+    alias: "Boobo: Kurz an dich denken"
+    description: "Sagt Mama Bescheid, wenn ein Medikament wieder genommen werden darf (nicht nachts)."
+    mode: single
+
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.boobo_mama_medikament
+        to: "on"
+
+      # Optional: Wiederholung alle 60 min, solange noch ein Medikament „geht wieder“ anzeigt.
+      # Zum Aktivieren die drei Zeilen einkommentieren (die Nachtruhe-Condition gilt dann auch hier):
+      # - trigger: time_pattern
+      #   minutes: "0"
+      #   id: wiederholung
+      # Und zusätzlich unter `conditions:` ergänzen, damit die Wiederholung nur läuft, solange es nötig ist:
+      #   - condition: state
+      #     entity_id: binary_sensor.boobo_mama_medikament
+      #     state: "on"
+
+    conditions:
+      # Nachtruhe: nur zwischen 06:30 und 23:00 benachrichtigen (after < before = Tagesfenster)
+      - condition: time
+        after: "06:30:00"
+        before: "23:00:00"
+
+    actions:
+      - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen
+        data:
+          title: "Kurz an dich denken"
+          message: "{{ states('sensor.boobo_mama_medikament_text') }} geht wieder."
+          data:
+            tag: boobo-mama             # gleiche tag → Benachrichtigung wird ersetzt statt gestapelt
+            channel: Boobo              # Android: eigener Benachrichtigungskanal
+            url: "http://NAS-IP:8099"   # iOS: Tippen öffnet die App
+            clickAction: "http://NAS-IP:8099"  # Android: dito

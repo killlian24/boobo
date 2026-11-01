@@ -25,6 +25,26 @@ Dateien in diesem Ordner:
 > auch die feste Container-IP `172.22.10.10:8099` verwenden (siehe `docker-compose.yml`). Dafür muss der
 > HA-Container das Netz `boobo-net` erreichen können; am einfachsten bleibt meist trotzdem `NAS-IP:8099`.
 
+
+## Schnellster Weg: ein Package statt sechs Includes
+
+`homeassistant/packages/boobo.yaml` enthält alles aus den Einzeldateien (REST-Sensoren, Template-Entitäten,
+REST-Befehle, Skripte, input_text, die drei Automationen) in einer Datei. Installation:
+
+1. In `configuration.yaml` einmalig ergänzen (falls noch nicht vorhanden):
+   ```yaml
+   homeassistant:
+     packages: !include_dir_named packages
+   ```
+2. Ordner `packages` neben `configuration.yaml` anlegen und `boobo.yaml` hineinkopieren.
+3. In der Datei `NAS-IP` durch die IP des NAS ersetzen, `notify.notify` durch die eigenen Handys
+   (z. B. eine notify-Gruppe) und in der Medikamenten-Automation das Handy der Mutter eintragen.
+4. Entwicklerwerkzeuge → YAML → Konfiguration prüfen → Home Assistant neu starten.
+
+Die Taster-Automation ist nicht im Package (sie braucht einen echten Taster-Sensor), die Dashboard-Karte
+bleibt `lovelace_card.yaml`. Die Einzeldateien unten sind weiterhin gültig, wer sie schon eingebunden hat,
+braucht das Package nicht.
+
 ## 1. NAS-IP eintragen
 
 In allen Dateien steht der Platzhalter `NAS-IP`. Ersetze ihn durch die IP des NAS, z. B. `192.168.1.20`.
