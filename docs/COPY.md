@@ -57,7 +57,9 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Uhrzeit an einem anderen Tag | Präfix „gestern “ / „morgen “, z. B. „Wieder ab morgen 02:44 · 1 von 4“, „Eigentlich erst ab morgen 02:44.“ |
 | Verlauf Tageskopf | „7 Mal · 2 Windeln“ (Windeln nur wenn vorhanden, „1 Windel“) |
 | Windel bearbeiten | Titel „Windel“ · Feld „Wie war sie?“ · Nass / Voll · Rückfrage „Windel löschen?“ („Ja, löschen“ / „Behalten“) |
-| Alle Einnahmen | Titel „Alle Einnahmen“ · leer: „Hier stehen später Mamas Einnahmen.“ · Rückfrage „Einnahme löschen?“ + „Paracetamol 1 g, 14:32“ |
+| Alle Einnahmen | Titel „Alle Einnahmen“ · leer: „Hier stehen später Mamas Einnahmen.“ · Zeile antippen öffnet „Einnahme“ |
+| Einnahme bearbeiten | Titel „Einnahme“ · Unterzeile „Paracetamol 1 g“ · Feld „Zeitpunkt“ · „Abbrechen“ / „Speichern“ · „Löschen“ → Rückfrage „Einnahme löschen?“ + „Paracetamol 1 g, 14:32“ („Ja, löschen“ / „Behalten“) |
+| Einnahme nachtragen (lang auf „Genommen“) | Titel „Nachtragen“ · Unterzeile „Paracetamol 1 g“ · Button „Notieren“ · Toast „Paracetamol, gestern 23:10. Notiert.“ |
 | Medikamente verwalten | Abschnitt „Für Mama“ · Zeile „max. 4 pro Tag · Abstand 6 h“ (bzw. „ohne Vorgaben“, „· pausiert“) · Schalter „Pause“ · Button „Hinzufügen“ |
 | Medikament-Dialog | Titel „Hinzufügen“ / „Bearbeiten“ · Felder „Name“, „Dosis (optional)“, „max. pro Tag“ (leer = ohne), „Abstand in Stunden“ · Hinweis „Frühestens alle 6 h, höchstens 4× in 24 Stunden.“ |
 | Medikament angelegt | „Eisen ist dabei.“ |

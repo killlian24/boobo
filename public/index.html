@@ -291,6 +291,23 @@
     </form>
   </dialog>
 
+  <!-- Einnahme nachtragen / bearbeiten -->
+  <dialog id="dlg-intake" class="sheet">
+    <form method="dialog" id="form-intake">
+      <h2 id="intake-title">Einnahme</h2>
+      <p id="intake-med" class="dlg-sub"></p>
+      <label class="field">
+        <span class="field-label">Zeitpunkt</span>
+        <input type="datetime-local" name="at" required>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary" id="btn-intake-save">Speichern</button>
+      </div>
+      <button type="button" class="btn danger-ghost full" id="btn-intake-delete">Löschen</button>
+    </form>
+  </dialog>
+
   <!-- Medikament anlegen / bearbeiten -->
   <dialog id="dlg-med" class="sheet">
     <form method="dialog" id="form-med" novalidate>

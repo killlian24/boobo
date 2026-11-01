@@ -163,6 +163,10 @@ Endpunkte:
   Doppelschutz wie bei feeds (10 min, gleiche Semantik: 409 / 200 skipped / 201). Eine Einnahme **vor** `next_possible_at`
   wird **nicht** vom Server verhindert (Mama entscheidet), der Client fragt vorher nach.
 - `GET /api/med-intakes?limit=50&before=<ISO>&medication_id=<id>` → `200 { "intakes": [ { id, medication_id, name, dose, at, note, created_at } ] }`, `at` absteigend
+- `GET /api/med-intakes/:id` → `200 { "intake": {id, medication_id, at, note, created_at} }`
+- `PATCH /api/med-intakes/:id` Teilmenge von `{ "at": "<ISO>", "note": "..." }` → `200 { "intake": {...}, "medication": {...mit Status} }`.
+  Zum Nachkorrigieren, wenn „Genommen“ erst später gedrückt wurde: `at` darf höchstens 5 min in der Zukunft liegen, `created_at` bleibt.
+  Der Medikamentenstatus (`taken_24h`, `next_possible_at`, `due`, …) wird aus der neuen Zeit berechnet; kein Doppelschutz beim Verschieben.
 - `DELETE /api/med-intakes/:id` → `204`
 - `GET /api/export.csv?what=intakes` → CSV `id,medication,dose,at,note`, Dateiname `boobo-medikamente.csv`
 
@@ -195,7 +199,8 @@ Zusätzlich in `GET /api/state` (für Home Assistant, nur **aktive** Medikamente
   (bzw. „Geht jetzt“ wenn `due`); noch nicht → „Wieder ab 16:30 · 2 von 4“; `remaining_24h === 0` → „Für heute komplett · 4 von 4“.
   Tipp vor `next_possible_at` → Rückfrage „Eigentlich erst ab 16:30. Trotzdem notieren?“ („Ja, trotzdem“ / „Lieber warten“).
   Toast „Paracetamol, 14:32. Notiert.“ + Rückgängig (→ DELETE intake). Kleiner Link „Alle Einnahmen“ öffnet eine Liste
-  (letzte 50, löschen möglich). Verwaltung in den Einstellungen: Liste aller Medikamente mit Name, Dosis, „max. pro Tag“,
+  (letzte 50); Tippen auf eine Zeile öffnet den Dialog „Einnahme“ (Zeitpunkt ändern → PATCH, „Löschen“). Langes Drücken
+  auf „Genommen“ öffnet denselben Dialog als „Nachtragen“ mit frei wählbarer Uhrzeit (POST mit `at`, Doppelschutz wie sonst). Verwaltung in den Einstellungen: Liste aller Medikamente mit Name, Dosis, „max. pro Tag“,
   „Abstand in Stunden“ (Eingabe in Stunden, API bekommt Minuten), Pausieren-Schalter, Löschen, „Hinzufügen“.
 - **Startbildschirm-Hilfe:** In den Einstellungen ein aufklappbarer Abschnitt „Als App auf den Startbildschirm“ mit
   iPhone-Schritten (Safari → Teilen → Zum Home-Bildschirm) und Android-Schritten: Chrome kann Apps ohne HTTPS nicht

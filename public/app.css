@@ -892,11 +892,21 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   align-items: center;
   gap: 12px;
   min-height: 52px;
+  width: 100%;
+  padding: 0;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
 }
+.intake-row:active { background: var(--surface); }
 .intake-row .time { flex: 0 0 56px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .intake-row .body { flex: 1 1 auto; min-width: 0; font-size: 0.9375rem; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.intake-row .icon-btn { margin-right: -10px; color: var(--ink-l); }
+.intake-row .chev { flex: 0 0 auto; color: var(--ink-l); display: inline-flex; }
+.dlg-sub { margin: -10px 0 16px; font-size: 0.9375rem; color: var(--text-2); overflow-wrap: anywhere; }
 .btn.grow { flex: 1 1 auto; }
 
 /* Export, Startbildschirm-Hilfe */

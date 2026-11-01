@@ -109,23 +109,6 @@
     return svg;
   }
 
-  function trashSvg() {
-    var ns = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '20');
-    svg.setAttribute('height', '20');
-    svg.setAttribute('aria-hidden', 'true');
-    var path = document.createElementNS(ns, 'path');
-    path.setAttribute('d', 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3');
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', 'currentColor');
-    path.setAttribute('stroke-width', '1.8');
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    svg.appendChild(path);
-    return svg;
-  }
 
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) {
@@ -519,6 +502,7 @@
       });
       btn.disabled = !!medBusy[m.id];
       btn.addEventListener('click', function () { takeMed(m); });
+      initLongPress(btn, function () { if (!medBusy[m.id]) openIntakeNew(m); });
       list.appendChild(el('li', { class: 'med-row' + (due ? ' due' : '') }, [
         el('div', { class: 'med-info' }, [title, el('div', { class: 'med-status', text: medStatusText(m, now) })]),
         btn
@@ -1136,28 +1120,129 @@
         ul = el('ul', { class: 'day-list' });
         list.appendChild(ul);
       }
-      var label = (it.name || 'Medikament') + (it.dose ? ' ' + it.dose : '');
-      var del = el('button', { class: 'icon-btn', type: 'button', 'aria-label': label + ', ' + fmtTime.format(d) + ' löschen' });
-      del.appendChild(trashSvg());
-      del.addEventListener('click', function () { deleteIntake(it, label, d); });
-      ul.appendChild(el('li', { class: 'intake-row' }, [
+      var label = intakeLabel(it);
+      var row = el('button', {
+        class: 'intake-row', type: 'button',
+        'aria-label': label + ', ' + fmtTime.format(d) + ' – bearbeiten'
+      }, [
         el('span', { class: 'time', text: fmtTime.format(d) }),
         el('span', { class: 'body', text: label }),
-        del
-      ]));
+        el('span', { class: 'chev', 'aria-hidden': 'true' }, [chevronSvg()])
+      ]);
+      row.addEventListener('click', function () { openIntakeEdit(it); });
+      ul.appendChild(el('li', null, [row]));
     });
   }
 
-  function deleteIntake(it, label, d) {
+  function intakeLabel(x) {
+    return (x.name || 'Medikament') + (x.dose ? ' ' + x.dose : '');
+  }
+
+  function chevronSvg() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', '18'); svg.setAttribute('height', '18'); svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    var pth = document.createElementNS(ns, 'path');
+    pth.setAttribute('d', 'M9 6l6 6-6 6');
+    svg.appendChild(pth);
+    return svg;
+  }
+
+  // ---------- Einnahme nachtragen / bearbeiten ----------
+  // editingIntake: vorhandene Einnahme (Bearbeiten) oder null (Nachtragen für intakeMed)
+  var editingIntake = null;
+  var intakeMed = null;
+
+  function openIntakeDialog() {
+    var form = $('#form-intake');
+    form.at.max = toLocalInputValue(new Date(Date.now() + 5 * 60000));
+    openDialog($('#dlg-intake'));
+  }
+
+  function openIntakeEdit(it) {
+    editingIntake = it;
+    intakeMed = null;
+    var form = $('#form-intake');
+    $('#intake-title').textContent = 'Einnahme';
+    $('#intake-med').textContent = intakeLabel(it);
+    form.at.value = toLocalInputValue(toDate(it.at) || new Date());
+    $('#btn-intake-save').textContent = 'Speichern';
+    $('#btn-intake-delete').hidden = false;
+    openIntakeDialog();
+  }
+
+  function openIntakeNew(m) {
+    editingIntake = null;
+    intakeMed = m;
+    var form = $('#form-intake');
+    $('#intake-title').textContent = 'Nachtragen';
+    $('#intake-med').textContent = intakeLabel(m);
+    form.at.value = toLocalInputValue(new Date());
+    $('#btn-intake-save').textContent = 'Notieren';
+    $('#btn-intake-delete').hidden = true;
+    openIntakeDialog();
+  }
+
+  function afterIntakeChange() {
+    if ($('#dlg-intakes').open) loadIntakes();
+    return refresh();
+  }
+
+  function submitIntake(e) {
+    e.preventDefault();
+    var form = $('#form-intake');
+    var atIso = fromLocalInputValue(form.at.value);
+    if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
+    var submit = $('#btn-intake-save');
+    var done;
+    if (editingIntake) {
+      var it = editingIntake;
+      if (form.at.value === toLocalInputValue(new Date(it.at))) { closeDialog($('#dlg-intake')); return; }
+      submit.disabled = true;
+      done = api('PATCH', '/api/med-intakes/' + it.id, { at: atIso }).then(function () {
+        closeDialog($('#dlg-intake'));
+        showToast('Gespeichert.', { duration: 3000 });
+        return afterIntakeChange();
+      });
+    } else if (intakeMed) {
+      var m = intakeMed;
+      submit.disabled = true;
+      done = postGuarded('/api/medications/' + m.id + '/intakes', { at: atIso }).then(function (res) {
+        closeDialog($('#dlg-intake'));
+        if (res && res.cancelled) return afterIntakeChange();
+        var intake = res && res.intake;
+        var at = intake ? toDate(intake.at) : null;
+        return afterIntakeChange().then(function () {
+          showToast((m.name || 'Medikament') + ', ' + (at ? dayPrefix(at, new Date()) + fmtTime.format(at) : '') + '. Notiert.', {
+            sub: 'Gut auf dich aufgepasst.',
+            action: intake ? function () { undoDelete('/api/med-intakes/' + intake.id, afterIntakeChange); } : null
+          });
+        });
+      });
+    } else {
+      closeDialog($('#dlg-intake'));
+      return;
+    }
+    done.catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    }).then(function () { submit.disabled = false; });
+  }
+
+  function deleteIntakeEditing() {
+    var it = editingIntake;
+    if (!it) return;
+    var d = toDate(it.at) || new Date();
     askConfirm({
-      title: 'Einnahme löschen?', text: label + ', ' + dayPrefix(d, new Date()) + fmtTime.format(d),
+      title: 'Einnahme löschen?', text: intakeLabel(it) + ', ' + dayPrefix(d, new Date()) + fmtTime.format(d),
       yes: 'Ja, löschen', no: 'Behalten', danger: true
     }).then(function (ok) {
       if (!ok) return;
       return api('DELETE', '/api/med-intakes/' + it.id).then(function () {
+        closeDialog($('#dlg-intake'));
         showToast('Gelöscht.', { duration: 3000 });
-        loadIntakes();
-        return refresh();
+        return afterIntakeChange();
       });
     }).catch(function (err) {
       showToast(errorText(err), { error: true, duration: 6000 });
@@ -1408,6 +1493,8 @@
     });
     $('#btn-backfill').addEventListener('click', function () { openAdd(); });
     $('#btn-intakes').addEventListener('click', openIntakes);
+    $('#form-intake').addEventListener('submit', submitIntake);
+    $('#btn-intake-delete').addEventListener('click', deleteIntakeEditing);
     $('#btn-med-add').addEventListener('click', function () { openMedEdit(null); });
     $('#form-diaper').addEventListener('submit', submitDiaper);
     $('#btn-diaper-delete').addEventListener('click', deleteDiaper);

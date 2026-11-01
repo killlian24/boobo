@@ -175,7 +175,7 @@ beschrieben. Kurzüberblick:
 | `PATCH`/`DELETE` | `/api/medications/:id` | Medikament ändern (z. B. pausieren) / löschen |
 | `POST` | `/api/medications/:id/intakes` | Einnahme notieren |
 | `GET` | `/api/med-intakes` | Einnahmen lesen |
-| `DELETE` | `/api/med-intakes/:id` | Einnahme löschen |
+| `PATCH`/`DELETE` | `/api/med-intakes/:id` | Einnahme ändern (Uhrzeit nachkorrigieren) / löschen |
 | `GET`/`PUT` | `/api/settings` | Intervall lesen / setzen |
 | `GET` | `/api/export.csv` | CSV-Export (`?what=diapers` oder `?what=intakes` für Windeln bzw. Medikamente) |
 

@@ -458,6 +458,47 @@ describe('Medikamente', () => {
     assert.equal(r.json.medication.due, true);
   });
 
+  test('PATCH /api/med-intakes/:id moves the time and recomputes the medication status', async () => {
+    const { api } = ctx;
+    const med = (await api('POST', '/api/medications', { name: 'Zink', max_per_day: 2, min_gap_minutes: 360 })).json.medication;
+    const t0 = Date.now();
+    // "Genommen" pressed late: logged now, actually taken 7 h ago
+    let r = await api('POST', `/api/medications/${med.id}/intakes`, { at: iso(t0 - 1 * MIN) });
+    assert.equal(r.status, 201);
+    assert.equal(r.json.medication.possible_now, false);
+    const intake = r.json.intake;
+
+    r = await api('GET', `/api/med-intakes/${intake.id}`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.intake, intake);
+
+    r = await api('PATCH', `/api/med-intakes/${intake.id}`, { at: iso(t0 - 7 * HOUR) });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.intake.id, intake.id);
+    assert.equal(r.json.intake.at, iso(t0 - 7 * HOUR));
+    assert.equal(r.json.intake.created_at, intake.created_at, 'created_at stays');
+    assert.equal(r.json.medication.id, med.id);
+    assert.equal(r.json.medication.possible_now, true, 'gap of 6 h is over after moving the intake back');
+    assert.equal(r.json.medication.taken_24h, 1);
+
+    // note only, time untouched
+    r = await api('PATCH', `/api/med-intakes/${intake.id}`, { note: 'nachgetragen' });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.intake.note, 'nachgetragen');
+    assert.equal(r.json.intake.at, iso(t0 - 7 * HOUR));
+    const listed = (await api('GET', `/api/med-intakes?medication_id=${med.id}`)).json.intakes;
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].at, iso(t0 - 7 * HOUR));
+
+    // validation
+    assert.equal((await api('PATCH', `/api/med-intakes/${intake.id}`, {})).status, 400);
+    assert.equal((await api('PATCH', `/api/med-intakes/${intake.id}`, { at: 'gestern' })).status, 400);
+    assert.equal((await api('PATCH', `/api/med-intakes/${intake.id}`, { at: iso(t0 + HOUR) })).status, 400, 'future');
+    assert.equal((await api('PATCH', '/api/med-intakes/999999', { at: iso(t0) })).status, 404);
+    assert.equal((await api('GET', '/api/med-intakes/999999')).status, 404);
+    assert.equal((await api('DELETE', `/api/medications/${med.id}`)).status, 204);
+  });
+
   test('intake duplicate protection: ask 409, skip 200, force 201, per medication', async () => {
     const { api } = ctx;
     const ppi = await byName('Magenschutz (PPI)');

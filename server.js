@@ -309,6 +309,7 @@ function createRepo(db) {
       'SELECT i.id, m.name AS medication, m.dose, i.at, i.note ' +
         'FROM med_intakes i JOIN medications m ON m.id = i.medication_id ORDER BY i.at ASC, i.id ASC',
     ),
+    intakeUpdate: db.prepare('UPDATE med_intakes SET at = ?, note = ? WHERE id = ?'),
     intakeRemove: db.prepare('DELETE FROM med_intakes WHERE id = ?'),
 
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
@@ -434,6 +435,13 @@ function createRepo(db) {
     },
     allIntakes() {
       return stmts.intakeAll.all();
+    },
+    intakeById(id) {
+      return stmts.intakeById.get(id);
+    },
+    updateIntake(id, { at, note }) {
+      stmts.intakeUpdate.run(at, note, id);
+      return stmts.intakeById.get(id);
     },
     removeIntake(id) {
       return stmts.intakeRemove.run(id).changes > 0;
@@ -1033,6 +1041,25 @@ async function handleApi(req, res, url, ctx) {
   const intakeMatch = /^\/api\/med-intakes\/([^/]+)$/.exec(p);
   if (intakeMatch) {
     const id = parseId(intakeMatch[1], 'Intake not found');
+    if (method === 'GET') {
+      const intake = repo.intakeById(id);
+      if (!intake) throw new HttpError(404, 'Intake not found');
+      return sendJson(res, 200, { intake });
+    }
+    if (method === 'PATCH') {
+      const body = await readJsonBody(req);
+      const existing = repo.intakeById(id);
+      if (!existing) throw new HttpError(404, 'Intake not found');
+      if (!['at', 'note'].some((k) => k in body)) {
+        throw new HttpError(400, 'Body must contain at least one of: at, note');
+      }
+      const intake = repo.updateIntake(id, {
+        at: 'at' in body ? parseAt(body.at) : existing.at,
+        note: 'note' in body ? validateNote(body.note) : existing.note,
+      });
+      const medication = medicationView(repo, repo.medicationById(intake.medication_id), Date.now());
+      return sendJson(res, 200, { intake, medication });
+    }
     if (method === 'DELETE') {
       if (!repo.removeIntake(id)) throw new HttpError(404, 'Intake not found');
       return sendEmpty(res, 204);
