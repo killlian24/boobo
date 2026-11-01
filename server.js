@@ -3,6 +3,10 @@
 // Contract: docs/API.md
 
 import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -808,7 +812,7 @@ async function handleApi(req, res, url, ctx) {
   const p = url.pathname;
 
   if (p === '/api/health' && method === 'GET') {
-    return sendJson(res, 200, { ok: true, version: VERSION, time: nowIso() });
+    return sendJson(res, 200, { ok: true, version: VERSION, time: nowIso(), https: ctx.https });
   }
 
   if (p === '/api/state' && method === 'GET') {
@@ -1145,6 +1149,110 @@ function handleStatic(req, res, url, publicDir) {
 // Server
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// HTTPS mit eigener Zertifizierungsstelle (docs/API.md, Erweiterung 3)
+// ---------------------------------------------------------------------------
+
+const CA_NAME = 'Boobo Zuhause CA';
+const CA_DAYS = 3650;
+const CERT_DAYS = 820; // Apple akzeptiert höchstens 825 Tage
+const RENEW_BEFORE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function parseHttpsPort(raw) {
+  if (raw === undefined || raw === null || raw === '') return 8443;
+  const n = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 0 || n > 65535) return 8443;
+  return n;
+}
+
+function parseTlsHosts(raw) {
+  const set = new Set(['localhost', '127.0.0.1']);
+  for (const h of String(raw || '').split(',').map((x) => x.trim()).filter(Boolean)) set.add(h);
+  return [...set];
+}
+
+function tlsSan(hosts) {
+  return hosts.map((h) => (net.isIP(h) ? 'IP:' : 'DNS:') + h).join(',');
+}
+
+function openssl(args, cwd) {
+  return execFileSync('openssl', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+// Legt CA und Serverzertifikat in tlsDir an bzw. erneuert das Serverzertifikat, wenn sich die
+// Adressen geändert haben oder es in < 30 Tagen abläuft. Die CA bleibt dabei stabil, damit die
+// Handys nichts neu installieren müssen. Gibt { cert, key, ca, expiresAt } zurück.
+function ensureTls(tlsDir, hosts, log) {
+  fs.mkdirSync(tlsDir, { recursive: true, mode: 0o700 });
+  const f = (name) => path.join(tlsDir, name);
+  const hostsLine = hosts.join(',');
+
+  if (!fs.existsSync(f('ca.key')) || !fs.existsSync(f('ca.crt'))) {
+    fs.writeFileSync(
+      f('ca.cnf'),
+      [
+        '[req]', 'distinguished_name = dn', 'x509_extensions = v3_ca', 'prompt = no',
+        '[dn]', `CN = ${CA_NAME}`,
+        '[v3_ca]', 'basicConstraints = critical, CA:TRUE', 'keyUsage = critical, keyCertSign, cRLSign',
+        'subjectKeyIdentifier = hash', '',
+      ].join('\n'),
+    );
+    openssl(['ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', f('ca.key')]);
+    openssl(['req', '-x509', '-new', '-key', f('ca.key'), '-out', f('ca.crt'), '-days', String(CA_DAYS), '-sha256', '-config', f('ca.cnf')]);
+    fs.chmodSync(f('ca.key'), 0o600);
+    for (const name of ['server.key', 'server.crt', 'hosts.txt']) fs.rmSync(f(name), { force: true });
+    log(`TLS: neue Zertifizierungsstelle „${CA_NAME}“ in ${tlsDir} erzeugt`);
+  }
+
+  let needServer = !fs.existsSync(f('server.key')) || !fs.existsSync(f('server.crt'));
+  if (!needServer) {
+    const prev = fs.existsSync(f('hosts.txt')) ? fs.readFileSync(f('hosts.txt'), 'utf8').trim() : '';
+    if (prev !== hostsLine) needServer = true;
+    else {
+      const x = new crypto.X509Certificate(fs.readFileSync(f('server.crt')));
+      if (new Date(x.validTo).getTime() - Date.now() < RENEW_BEFORE_MS) needServer = true;
+    }
+  }
+  if (needServer) {
+    fs.writeFileSync(
+      f('server.ext'),
+      [
+        `subjectAltName = ${tlsSan(hosts)}`, 'basicConstraints = CA:FALSE',
+        'keyUsage = critical, digitalSignature, keyEncipherment', 'extendedKeyUsage = serverAuth',
+        'subjectKeyIdentifier = hash', 'authorityKeyIdentifier = keyid, issuer', '',
+      ].join('\n'),
+    );
+    openssl(['ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', f('server.key')]);
+    openssl(['req', '-new', '-key', f('server.key'), '-out', f('server.csr'), '-subj', '/CN=Boobo', '-sha256']);
+    openssl([
+      'x509', '-req', '-in', f('server.csr'), '-CA', f('ca.crt'), '-CAkey', f('ca.key'), '-CAcreateserial',
+      '-out', f('server.crt'), '-days', String(CERT_DAYS), '-sha256', '-extfile', f('server.ext'),
+    ]);
+    fs.chmodSync(f('server.key'), 0o600);
+    fs.writeFileSync(f('hosts.txt'), hostsLine + '\n');
+    fs.rmSync(f('server.csr'), { force: true });
+    log(`TLS: Serverzertifikat für ${hostsLine} erzeugt (${CERT_DAYS} Tage)`);
+  }
+
+  const cert = fs.readFileSync(f('server.crt'));
+  const key = fs.readFileSync(f('server.key'));
+  const ca = fs.readFileSync(f('ca.crt'));
+  const x = new crypto.X509Certificate(cert);
+  return { cert, key, ca, expiresAt: new Date(x.validTo).toISOString() };
+}
+
+function sendCaCert(req, res, tls) {
+  const body = tls.ca;
+  res.writeHead(200, {
+    'Content-Type': 'application/x-x509-ca-cert',
+    'Content-Disposition': 'attachment; filename="boobo-ca.crt"',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+  });
+  if (req.method === 'HEAD') return res.end();
+  res.end(body);
+}
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
@@ -1157,14 +1265,38 @@ export function createServer({
   intervalMinutes = Number.parseInt(process.env.FEED_INTERVAL_MINUTES || '180', 10) || 180,
   publicDir = PUBLIC_DIR,
   duplicateMinutes = parseDuplicateMinutes(process.env.FEED_DUPLICATE_MINUTES),
+  httpsPort = parseHttpsPort(process.env.HTTPS_PORT),
+  tlsDir = process.env.TLS_DIR || path.join(dataDir, 'tls'),
+  tlsHosts = parseTlsHosts(process.env.TLS_HOSTS),
   log = (line) => console.log(line),
 } = {}) {
   const timeZone = resolveTimeZone();
   const db = openDatabase(dataDir, intervalMinutes);
   const repo = createRepo(db);
-  const ctx = { repo, timeZone, duplicateMinutes };
 
-  const server = http.createServer(async (req, res) => {
+  // HTTPS vorbereiten (optional). Scheitert die Zertifikatserzeugung, läuft http trotzdem.
+  let tls = null;
+  let httpsInfo = { enabled: false };
+  if (httpsPort > 0) {
+    try {
+      tls = ensureTls(tlsDir, tlsHosts, log);
+      httpsInfo = {
+        enabled: true,
+        port: httpsPort,
+        hosts: tlsHosts.filter((h) => h !== 'localhost' && h !== '127.0.0.1'),
+        ca_url: '/boobo-ca.crt',
+        ca_name: CA_NAME,
+        cert_expires_at: tls.expiresAt,
+      };
+    } catch (err) {
+      console.error(`TLS: HTTPS bleibt aus – ${err && err.message ? err.message : err}`);
+      tls = null;
+    }
+  }
+
+  const ctx = { repo, timeZone, duplicateMinutes, https: httpsInfo };
+
+  const handler = async (req, res) => {
     const started = process.hrtime.bigint();
     const url = new URL(req.url, 'http://localhost');
     const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
@@ -1180,6 +1312,8 @@ export function createServer({
         res.setHeader('Cache-Control', 'no-store');
         if (req.method === 'OPTIONS') return sendEmpty(res, 204);
         await handleApi(req, res, url, ctx);
+      } else if (url.pathname === '/boobo-ca.crt' && tls && (req.method === 'GET' || req.method === 'HEAD')) {
+        sendCaCert(req, res, tls);
       } else {
         handleStatic(req, res, url, publicDir);
       }
@@ -1195,28 +1329,33 @@ export function createServer({
         res.end('Not found');
       }
     }
-  });
+  };
 
+  const server = http.createServer(handler);
   server.keepAliveTimeout = 5000;
+  const httpsServer = tls ? https.createServer({ cert: tls.cert, key: tls.key }, handler) : null;
+  if (httpsServer) httpsServer.keepAliveTimeout = 5000;
 
   let closed = false;
   function close() {
     if (closed) return Promise.resolve();
     closed = true;
-    return new Promise((resolve) => {
-      server.close(() => {
-        try {
-          db.close();
-        } catch {
-          /* already closed */
-        }
-        resolve();
+    const closeOne = (srv) =>
+      new Promise((resolve) => {
+        if (!srv || !srv.listening) return resolve();
+        srv.close(() => resolve());
+        srv.closeAllConnections?.();
       });
-      server.closeAllConnections?.();
+    return Promise.all([closeOne(server), closeOne(httpsServer)]).then(() => {
+      try {
+        db.close();
+      } catch {
+        /* already closed */
+      }
     });
   }
 
-  return { server, db, repo, timeZone, dataDir, duplicateMinutes, close };
+  return { server, httpsServer, https: httpsInfo, httpsPort, db, repo, timeZone, dataDir, duplicateMinutes, close };
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,6 +1384,12 @@ if (isMainModule()) {
         `| interval=${app.repo.getInterval()}min | duplicate=${app.duplicateMinutes}min | tz=${app.timeZone}`,
     );
   });
+  if (app.httpsServer) {
+    app.httpsServer.listen(app.httpsPort, '0.0.0.0', () => {
+      const hosts = app.https.hosts.length ? app.https.hosts.join(', ') : 'localhost';
+      console.log(`Boobo HTTPS on https://0.0.0.0:${app.httpsPort} (Zertifikat für ${hosts}, gültig bis ${app.https.cert_expires_at})`);
+    });
+  }
 
   let shuttingDown = false;
   const shutdown = (signal) => {

@@ -201,3 +201,48 @@ Zusätzlich in `GET /api/state` (für Home Assistant, nur **aktive** Medikamente
   iPhone-Schritten (Safari → Teilen → Zum Home-Bildschirm) und Android-Schritten: Chrome kann Apps ohne HTTPS nicht
   installieren; darum einmalig `chrome://flags/#unsafely-treat-insecure-origin-as-secure` öffnen, auf „Enabled“ stellen,
   `location.origin` (die App zeigt den echten Wert) ins Textfeld, Chrome neu starten, dann Menü ⋮ → „App installieren“.
+
+---
+
+# Erweiterung 3 (2026-11-01): HTTPS mit eigener Zertifizierungsstelle
+
+Hintergrund: Chrome auf Android zeigt bei http in installierten Web-Apps immer die Adressleiste; echte
+App-Installation (ohne Leiste, mit Service Worker/Offline-Cache) gibt es nur über HTTPS. Boobo bringt dafür
+eine eigene kleine CA mit. Der http-Port 8099 bleibt unverändert (Home Assistant, Healthcheck).
+
+## Server
+- Env `HTTPS_PORT` (Default `8443`, `0` = aus), `TLS_DIR` (Default `${DATA_DIR}/tls`),
+  `TLS_HOSTS` (Komma-Liste der Adressen, unter denen die App im LAN erreichbar ist, z. B. `192.168.0.124,nas.local`;
+  IPs werden als `IP:`-SAN, Namen als `DNS:`-SAN eingetragen; `localhost` und `127.0.0.1` sind immer dabei).
+- Beim Start, wenn `HTTPS_PORT > 0`: Dateien in `TLS_DIR` sicherstellen, erzeugt mit `openssl` (im Image installiert):
+  - `ca.key` / `ca.crt`: eigene CA, CN „Boobo Zuhause CA“, EC P-256, 10 Jahre, `basicConstraints=critical,CA:TRUE`.
+  - `server.key` / `server.crt`: Serverzertifikat, signiert von der CA, EC P-256, **820 Tage** (Apple akzeptiert max. 825),
+    SAN mit allen `TLS_HOSTS`, `extendedKeyUsage=serverAuth`, `basicConstraints=CA:FALSE`.
+  - `hosts.txt`: die Liste, für die `server.crt` ausgestellt wurde. Ändert sich `TLS_HOSTS` oder läuft das
+    Serverzertifikat in < 30 Tagen ab, wird nur `server.*` neu erzeugt (CA bleibt, Handys müssen nichts neu installieren).
+  - Fehlt `openssl` oder schlägt die Erzeugung fehl: Warnung ins Log, HTTPS bleibt aus, http läuft weiter.
+- Zweiter Listener `https.createServer` mit demselben Request-Handler auf `0.0.0.0:HTTPS_PORT`.
+- `GET /boobo-ca.crt` (auf http **und** https): PEM der CA, `Content-Type: application/x-x509-ca-cert`,
+  `Content-Disposition: attachment; filename="boobo-ca.crt"`, `Cache-Control: no-store`. 404 wenn HTTPS aus.
+- `GET /api/health` zusätzlich:
+  ```json
+  "https": { "enabled": true, "port": 8443, "hosts": ["192.168.0.124"], "ca_url": "/boobo-ca.crt",
+             "ca_name": "Boobo Zuhause CA", "cert_expires_at": "2029-01-29T07:00:00.000Z" }
+  ```
+  bzw. `"https": { "enabled": false }`.
+- `createServer()` bekommt die Optionen `httpsPort`, `tlsDir`, `tlsHosts`; Rückgabe zusätzlich `httpsServer` (oder null)
+  und `https` (das Health-Objekt). `close()` schließt beide Listener.
+
+## Docker / Compose
+- Dockerfile: `apk add --no-cache openssl`, `EXPOSE 8099 8443`.
+- docker-compose.yml: Port `8443:8443`, `HTTPS_PORT=8443`, `TLS_HOSTS=192.168.0.124` (die LAN-IP des NAS; im Router fest vergeben).
+  Zertifikate liegen im Volume `boobo-data` unter `/data/tls` und überleben Redeploys.
+
+## Frontend (public/)
+- Einstellungen → „Als App auf den Startbildschirm“ liest `health.https`:
+  - Seite läuft über **http** und `https.enabled`: Anleitung „einmalig Zertifikat installieren“ mit Download-Link
+    `/boobo-ca.crt`, Android- und iPhone-Schritten, und einem Link auf `https://<location.hostname oder hosts[0]>:<port>/`.
+  - Seite läuft über **https**, nicht standalone: nur „Menü ⋮ → App installieren“ (Android) bzw. „Teilen → Zum
+    Home-Bildschirm“ (iPhone).
+  - standalone: Abschnitt ausgeblendet. `https.enabled === false`: Hinweis auf README.
+- Der Chrome-Flag-Weg entfällt aus der Anleitung.

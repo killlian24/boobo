@@ -922,7 +922,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .install-help ol { margin: 0 0 12px; padding-left: 1.25em; }
 .install-help li { margin: 4px 0; }
 .install-help .hint { margin: 0 0 4px; }
-.copy-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; margin-top: 4px; }
+.install-help .install-btn { min-height: 48px; margin: 4px 0 8px; text-align: center; }
+.install-help .install-step { margin-top: 12px; }
+.install-help #install-body > h3:first-child { margin-top: 4px; text-transform: none; letter-spacing: 0; font-size: 0.9375rem; color: var(--text); }
 .install-help code {
   padding: 4px 8px;
   border-radius: 8px;

@@ -897,6 +897,8 @@
   }
 
   // Einstellungen
+  var lastHealth = null;
+
   function openSettings() {
     var form = $('#form-settings');
     var cur = state.state ? state.state.interval_minutes : null;
@@ -905,14 +907,19 @@
     $('#settings-meta').textContent = 'Boobo · Version ' + APP_VERSION + ' · ' + location.host;
     segSet($('#theme-seg'), getTheme());
     $('#night-toggle').checked = nightEnabled();
-    renderInstallHelp();
+    renderInstallHelp(lastHealth);
     renderMedAdmin();
     refreshMeds();
     api('GET', '/api/health').then(function (h) {
+      lastHealth = h || null;
+      renderInstallHelp(lastHealth);
       if (h && h.version) {
         $('#settings-meta').textContent = 'Boobo · Server ' + h.version + ' · App ' + APP_VERSION + ' · ' + location.host;
       }
-    }).catch(function () { /* egal */ });
+    }).catch(function () {
+      lastHealth = null;
+      renderInstallHelp(null);
+    });
     if (cur == null) {
       api('GET', '/api/settings').then(function (s) {
         if (s && s.interval_minutes) { form.interval_minutes.value = s.interval_minutes; updateIntervalHint(); }
@@ -1297,53 +1304,88 @@
     return window.navigator.standalone === true;
   }
 
-  function renderInstallHelp() {
+  function mk(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // <strong>-Teile per **...** markieren
+  function richText(parent, text) {
+    text.split('**').forEach(function (part, i) {
+      if (!part) return;
+      if (i % 2) parent.appendChild(mk('strong', null, part));
+      else parent.appendChild(document.createTextNode(part));
+    });
+    return parent;
+  }
+
+  function stepList(items) {
+    var ol = mk('ol');
+    items.forEach(function (t) { ol.appendChild(richText(mk('li'), t)); });
+    return ol;
+  }
+
+  function installHttpsUrl(https) {
+    var hosts = (https.hosts && https.hosts.length) ? https.hosts : [location.hostname];
+    var host = hosts.indexOf(location.hostname) !== -1 ? location.hostname : hosts[0];
+    if (host.indexOf(':') !== -1 && host.charAt(0) !== '[') host = '[' + host + ']';
+    return 'https://' + host + ':' + https.port + '/';
+  }
+
+  function renderInstallHelp(health) {
     var box = $('#install-help');
-    box.hidden = isStandalone();
-    $('#install-origin').textContent = location.origin;
-  }
+    var body = $('#install-body');
+    var standalone = isStandalone();
+    box.hidden = standalone;
+    body.textContent = '';
+    if (standalone) return;
 
-  function copyText(text, host) {
-    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-    return new Promise(function (resolve, reject) {
-      // Im modalen Dialog muss das Hilfsfeld im Dialog liegen, sonst ist es inert
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.top = '0';
-      ta.style.left = '0';
-      ta.style.opacity = '0';
-      (host || document.body).appendChild(ta);
-      ta.select();
-      try { ta.setSelectionRange(0, text.length); } catch (e) { /* egal */ }
-      var ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      ta.parentNode.removeChild(ta);
-      if (ok) resolve(); else reject(new Error('copy failed'));
-    });
-  }
+    var https = health && health.https;
 
-  function initCopyButtons() {
-    $$('[data-copy]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var src = document.getElementById(b.getAttribute('data-copy'));
-        if (!src) return;
-        copyText(src.textContent, b.closest('dialog')).then(function () {
-          showToast('Kopiert.', { duration: 2500 });
-        }).catch(function () {
-          // Fallback: Text markieren, damit man ihn selbst kopieren kann
-          try {
-            var r = document.createRange();
-            r.selectNodeContents(src);
-            var sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(r);
-          } catch (e) { /* egal */ }
-          showToast('Markiert – bitte lange drücken und kopieren.', { duration: 4000 });
-        });
-      });
-    });
+    if (location.protocol === 'https:') {
+      body.appendChild(mk('h3', null, 'Android'));
+      body.appendChild(stepList(['Oben rechts Menü **⋮** öffnen.', '**„App installieren“** wählen.']));
+      body.appendChild(mk('h3', null, 'iPhone'));
+      body.appendChild(stepList(['In **Safari** unten auf **Teilen** tippen (Quadrat mit Pfeil).', '**„Zum Home-Bildschirm“** wählen.']));
+      return;
+    }
+
+    if (!(https && https.enabled)) {
+      body.appendChild(mk('p', 'hint', 'Für die Installation als App braucht Boobo HTTPS. Anleitung: README im Repo.'));
+      return;
+    }
+
+    // http, HTTPS vorhanden: einmalig Zertifikat installieren
+    body.appendChild(mk('h3', null, 'Als echte App installieren (einmalig)'));
+
+    body.appendChild(mk('p', 'hint', 'Schritt 1'));
+    var dl = mk('a', 'btn ghost link-btn install-btn', 'Zertifikat laden');
+    dl.href = https.ca_url || '/boobo-ca.crt';
+    dl.setAttribute('download', 'boobo-ca.crt');
+    body.appendChild(dl);
+
+    body.appendChild(mk('p', 'hint install-step', 'Schritt 2: Zertifikat installieren'));
+    body.appendChild(mk('h3', null, 'Android'));
+    body.appendChild(stepList([
+      'Einstellungen öffnen → **„Sicherheit und Datenschutz“** → **„Weitere Sicherheitseinstellungen“** → **„Von Gerätespeicher installieren“** → **„CA-Zertifikat“** → **„Trotzdem installieren“**.',
+      'Die Datei **boobo-ca.crt** aus den Downloads wählen.'
+    ]));
+    body.appendChild(mk('p', 'hint', 'Bei anderen Handys: Einstellungen → Sicherheit → „Verschlüsselung & Anmeldedaten“ → „Zertifikat installieren“ → „CA-Zertifikat“.'));
+    body.appendChild(mk('h3', null, 'iPhone'));
+    body.appendChild(stepList([
+      'Zertifikat in **Safari** laden und **„Erlauben“** tippen.',
+      'Einstellungen öffnen, oben **„Profil geladen“** → **Installieren**.',
+      'Dann Einstellungen → Allgemein → Info → **„Zertifikatsvertrauenseinstellungen“** → **„Boobo Zuhause CA“** einschalten.'
+    ]));
+
+    body.appendChild(mk('p', 'hint install-step', 'Schritt 3'));
+    var openBtn = mk('a', 'btn primary link-btn install-btn', 'Boobo verschlüsselt öffnen');
+    openBtn.href = installHttpsUrl(https);
+    body.appendChild(openBtn);
+    body.appendChild(richText(mk('p', 'hint'), 'Dort dann Android: **Menü ⋮ → App installieren**, iPhone: **Teilen → Zum Home-Bildschirm**.'));
+    body.appendChild(mk('p', 'hint', 'Die alte Verknüpfung könnt ihr löschen. Der Hinweis zum Chrome-Schalter von früher gilt nicht mehr.'));
   }
 
   // ---------- Init ----------
@@ -1354,7 +1396,6 @@
     initConfirm();
     initChips();
     initClickSwallow();
-    initCopyButtons();
 
     $$('.feed-btn').forEach(function (b) {
       var side = b.getAttribute('data-side');

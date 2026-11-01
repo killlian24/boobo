@@ -13,12 +13,13 @@ ENV PORT=8099 \
     TZ=Europe/Berlin \
     NODE_ENV=production
 
-# Datenverzeichnis für die SQLite-Datei; gehört dem unprivilegierten User `node` (uid 1000).
-RUN mkdir -p /data && chown -R node:node /data
+# openssl erzeugt beim ersten Start die eigene Zertifizierungsstelle für HTTPS (siehe README).
+# Datenverzeichnis für SQLite und Zertifikate; gehört dem unprivilegierten User `node` (uid 1000).
+RUN apk add --no-cache openssl && mkdir -p /data && chown -R node:node /data
 
 USER node
 
-EXPOSE 8099
+EXPOSE 8099 8443
 VOLUME ["/data"]
 
 # wget ist Teil von BusyBox in Alpine – kein zusätzliches Paket nötig.

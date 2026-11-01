@@ -41,7 +41,7 @@ Portainer klont das Repository und baut das Image direkt auf dem NAS – kein Im
 8. **Deploy the stack**
 
 Der erste Build dauert je nach NAS etwa 1–3 Minuten (Node-Image laden, Dateien kopieren). Danach läuft der
-Container `boobo` auf Port **8099**, mit Healthcheck und automatischem Neustart.
+Container `boobo` auf Port **8099** (HTTP) und **8443** (HTTPS), mit Healthcheck und automatischem Neustart.
 
 ### Feste Container-IP
 
@@ -63,36 +63,56 @@ docker compose up -d --build
 
 ### App öffnen und auf den Startbildschirm legen
 
-Im Heimnetz: **`http://NAS-IP:8099`** (IP des NAS einsetzen, z. B. `http://192.168.0.124:8099`).
-Tipp: dem NAS im Router eine feste IP geben.
+Im Heimnetz: **`http://NAS-IP:8099`** (IP des NAS einsetzen, z. B. `http://192.168.0.124:8099`). Zum Ausprobieren und für
+Home Assistant reicht das. Als „echte“ App (ohne Adressleiste, mit Offline-Cache) läuft Boobo über **`https://NAS-IP:8443`**.
 
-**iPhone (Safari):** Seite öffnen → Teilen-Symbol → **„Zum Home-Bildschirm“** → Hinzufügen. Fertig, das
-klappt auch ohne HTTPS.
+**Warum HTTPS?** Chrome auf Android zeigt bei `http` in installierten Apps immer die Adressleiste und bietet nur
+„Verknüpfung erstellen“ an. iOS ist da gnädiger, aber auch dort bringt erst HTTPS den Offline-Cache (Service Worker
+brauchen einen sicheren Kontext).
 
-**Android (Chrome):** Chrome erlaubt installierbare Apps nur über HTTPS. Über `http://NAS-IP:8099` bietet das Menü (⋮)
-deshalb nur **„Verknüpfung erstellen“** an (bzw. „Diese App kann nicht installiert werden“); iOS prüft das nicht. Es geht
-trotzdem, ohne Zertifikate, mit einem einmaligen Handgriff pro Handy:
+**So funktioniert es:** Boobo erzeugt beim ersten Start eine eigene kleine Zertifizierungsstelle („Boobo Zuhause CA“) und
+daraus ein Zertifikat für die NAS-Adresse. Die Dateien liegen im Volume unter `/data/tls` und überleben Redeploys. Auf jedem
+Handy muss die CA **einmalig** installiert werden; danach vertraut das Handy Boobo im Heimnetz.
 
-1. In Chrome `chrome://flags/#unsafely-treat-insecure-origin-as-secure` öffnen.
-2. Die Einstellung auf **„Enabled“** stellen.
-3. Im Textfeld darunter die Adresse von Boobo eintragen, z. B. `http://192.168.0.124:8099` (genau so, mit `http://`
-   und Port, ohne Schrägstrich am Ende).
-4. Unten auf **„Relaunch“** tippen, damit Chrome komplett neu startet.
-5. Boobo öffnen → Menü (⋮) → **„App installieren“**.
+Voraussetzungen:
 
-Die App zeigt dieselbe Anleitung auch selbst: Einstellungen → „Als App auf den Startbildschirm“, mit der richtigen Adresse
-zum Kopieren.
+- In `docker-compose.yml` muss `TLS_HOSTS` die **LAN-IP des NAS** enthalten (z. B. `TLS_HOSTS=192.168.0.124`, mehrere
+  Adressen mit Komma). Ändert sich die Liste, stellt Boobo nur das Serverzertifikat neu aus; die Handys müssen nichts neu
+  installieren.
+- Im Router dem NAS eine **feste IP** zuweisen, sonst passt das Zertifikat nach einem Wechsel nicht mehr.
+- Port **8443** muss erreichbar sein (steht in der Compose-Datei bereits mit drin).
 
-Einordnung: Das Flag sagt Chrome nur, dass genau diese eine Adresse wie eine sichere Seite behandelt werden darf. Andere
-Webseiten sind nicht betroffen, und im eigenen Heimnetz ist das unbedenklich. Wechselt die NAS-IP, muss die neue Adresse
-eingetragen werden.
+**Schritt 1, auf beiden Systemen:** Auf dem Handy `http://NAS-IP:8099/boobo-ca.crt` öffnen (in der App geht das einfacher:
+Einstellungen → „Als App auf den Startbildschirm“ → „Zertifikat laden“).
 
-Sauberere Alternative für später: Boobo hinter einem HTTPS-Reverse-Proxy betreiben (z. B. Nginx Proxy Manager oder Caddy)
-oder per Tailscale erreichbar machen. Dann ist kein Flag nötig, Chrome installiert die App normal, und der
-Offline-Cache (Service Worker) funktioniert ebenfalls.
+**Schritt 2, Android (Samsung):** Einstellungen → **„Sicherheit und Datenschutz“** → **„Weitere Sicherheitseinstellungen“** →
+**„Von Gerätespeicher installieren“** → **„CA-Zertifikat“** → **„Trotzdem installieren“** → Datei `boobo-ca.crt` aus den
+Downloads wählen.
 
-Ohne HTTPS gibt es keinen Offline-Cache (Service Worker brauchen einen sicheren Kontext); alles andere, inklusive
-Vollbild-Icon auf dem Startbildschirm, funktioniert.
+**Schritt 2, Android (andere):** Einstellungen → **„Sicherheit“** → **„Verschlüsselung & Anmeldedaten“** →
+**„Zertifikat installieren“** → **„CA-Zertifikat“** → Datei `boobo-ca.crt` wählen.
+
+Android kann nach dem Installieren eines Nutzer-Zertifikats einen Sicherheitshinweis anzeigen („Das Netzwerk wird
+möglicherweise überwacht“ o. ä.). Das ist normal: Das Zertifikat gilt nur für die Adresse deines NAS und für nichts anderes
+im Internet.
+
+**Schritt 2, iPhone:** Die Adresse aus Schritt 1 in **Safari** öffnen und **„Erlauben“** tippen. Dann Einstellungen → ganz oben
+**„Profil geladen“** → **Installieren**. Danach Einstellungen → Allgemein → Info → **„Zertifikatsvertrauenseinstellungen“** →
+**„Boobo Zuhause CA“** einschalten.
+
+**Schritt 3:** `https://NAS-IP:8443` öffnen (z. B. `https://192.168.0.124:8443`).
+
+- **Android (Chrome):** Menü (⋮) → **„App installieren“**.
+- **iPhone (Safari):** Teilen-Symbol → **„Zum Home-Bildschirm“** → Hinzufügen.
+
+Die App zeigt diese Anleitung auch selbst: Einstellungen → „Als App auf den Startbildschirm“, mit dem richtigen Link.
+
+Eine alte Verknüpfung (http) kann gelöscht werden. Wer früher den Chrome-Schalter
+`chrome://flags/#unsafely-treat-insecure-origin-as-secure` gesetzt hat, kann ihn wieder auf **„Default“** stellen; er wird
+nicht mehr gebraucht.
+
+Wer Boobo lieber hinter einem eigenen HTTPS-Reverse-Proxy (z. B. Nginx Proxy Manager oder Caddy) oder per Tailscale
+betreibt, kann den eingebauten HTTPS-Port mit `HTTPS_PORT=0` abschalten.
 
 ## Home Assistant
 
@@ -108,6 +128,9 @@ Umgebungsvariablen (in `docker-compose.yml` unter `environment:` setzen):
 | Variable | Default | Bedeutung |
 |---|---|---|
 | `PORT` | `8099` | HTTP-Port im Container |
+| `HTTPS_PORT` | `8443` | HTTPS-Port im Container (eigene CA, siehe oben); `0` schaltet HTTPS ab |
+| `TLS_DIR` | `${DATA_DIR}/tls` (`/data/tls`) | Ablageort von CA und Serverzertifikat |
+| `TLS_HOSTS` | – | Komma-Liste der LAN-Adressen des NAS, für die das Zertifikat gilt (z. B. `192.168.0.124,nas.local`); `localhost` und `127.0.0.1` sind immer dabei |
 | `DATA_DIR` | `/data` (Image) / `./data` (lokal) | Ablageort der SQLite-Datei `boobo.db` |
 | `FEED_INTERVAL_MINUTES` | `180` | Stillintervall in Minuten beim **ersten Start**; danach gilt der Wert aus den App-Einstellungen |
 | `FEED_DUPLICATE_MINUTES` | `10` | Zeitfenster des Doppelschutzes in Minuten |

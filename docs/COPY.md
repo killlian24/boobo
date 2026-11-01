@@ -47,7 +47,7 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | HA Erinnerung Medikament | Titel „Kurz an dich denken“ · Text „Paracetamol 1 g geht wieder. Zuletzt um 12:10.“ |
 | Erscheinungsbild | „Erscheinungsbild“ · System / Hell / Dunkel · „Nachts dimmen (22–7 Uhr)“ |
 | Nachtragen Chips | „vor 10 min“ „20 min“ „30 min“ „45 min“ „1 h“ |
-| Startbildschirm-Hilfe | „Als App auf den Startbildschirm“ |
+| Startbildschirm-Hilfe | „Als App auf den Startbildschirm“ · bei http: „Als echte App installieren (einmalig)“, Buttons „Zertifikat laden“ / „Boobo verschlüsselt öffnen“ |
 
 ### Ergänzungen Frontend (Erweiterung 2)
 
@@ -63,4 +63,4 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Medikament angelegt | „Eisen ist dabei.“ |
 | Medikament löschen | „Paracetamol löschen?“ · „Die notierten Einnahmen verschwinden mit.“ · „Ja, löschen“ / „Behalten“ |
 | Export | „Windeln als CSV“ · „Medikamente als CSV“ |
-| Startbildschirm-Hilfe | Buttons „Kopieren“ → Toast „Kopiert.“ (sonst „Markiert – bitte lange drücken und kopieren.“) |
+| Startbildschirm-Hilfe | Buttons „Zertifikat laden“ und „Boobo verschlüsselt öffnen“ (kein Kopieren mehr nötig) |

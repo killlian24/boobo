@@ -7,7 +7,8 @@ services:
     image: boobo:local
     container_name: boobo
     ports:
-      - "8099:8099"
+      - "8099:8099"   # http: Home Assistant, Healthcheck, Zertifikat-Download
+      - "8443:8443"   # https: für die Installation als App auf dem Handy
     volumes:
       # Variante A (Standard): benanntes Docker-Volume, Rechte passen automatisch.
       - boobo-data:/data
@@ -21,6 +22,11 @@ services:
       # Standard-Intervall in Minuten (3 h). Gilt nur beim ersten Start als Default;
       # danach wird der Wert aus den App-Einstellungen (SQLite) genommen.
       - FEED_INTERVAL_MINUTES=180
+      # HTTPS mit eigener Zertifizierungsstelle (Zertifikate liegen im Volume unter /data/tls).
+      # TLS_HOSTS = die Adresse(n), unter denen die App im Heimnetz aufgerufen wird: die LAN-IP des NAS
+      # (im Router fest vergeben!), optional zusätzlich ein Name wie nas.local. 0 bei HTTPS_PORT schaltet ab.
+      - HTTPS_PORT=8443
+      - TLS_HOSTS=192.168.0.124
     restart: unless-stopped
     networks:
       boobo-net:
