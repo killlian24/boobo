@@ -959,10 +959,54 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 /* ---------- Erweiterung 4: Wachstum ---------- */
 
-.growth { margin-top: 12px; padding: 16px 20px; }
-.summary + .growth, .meds + .growth { margin-top: 12px; }
-.actions + .growth { margin-top: 24px; }
-.growth-cta { margin-top: 12px; min-height: 44px; }
+/* Tabs unten: Stillen / Wachstum */
+:root { --tabbar-h: 60px; }
+.app { padding-bottom: calc(var(--tabbar-h) + 90px + env(safe-area-inset-bottom)); }
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding: 0 max(var(--gutter), calc((100% - 600px) / 2)) env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-height: 44px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tab[aria-current="page"] { color: var(--text); }
+.tab[aria-current="page"] svg { color: var(--ink-l); }
+.tab:active { background: var(--bg); }
+.toast { bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom)); }
+
+/* Seite Wachstum */
+.growth-head { margin: 0 0 16px; }
+.page-title { margin: 0; font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; }
+.page-sub { margin: 4px 0 0; font-size: 0.9375rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.growth-setup { padding: 16px 20px; }
+.growth-setup .summary-line.main { margin-top: 0; }
+.growth-cta { margin-top: 16px; min-height: 48px; }
+.growth-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+.growth-actions .btn.ghost { background: var(--surface); }
+.growth-chart-card { padding: 16px 16px 14px; }
+.growth-chart-card .field { margin-bottom: 12px; }
+.growth-import-link { margin-top: 4px; padding-left: 0; }
 
 .sheet-tall { max-height: 96dvh; }
 .dlg-sub { margin-top: -10px; }
@@ -994,6 +1038,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 .profile-hint { margin: 8px 0 16px; }
 
+.ref-seg { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
 .ref-seg .seg { padding: 0 2px; font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ref-seg .seg.unavailable { color: var(--text-2); border-style: dashed; }
 .source-seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }

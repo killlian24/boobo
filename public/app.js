@@ -242,7 +242,6 @@
     renderDiaperButtons();
     renderMeds();
     renderSummary();
-    renderGrowthCard();
     renderHistory();
   }
 
@@ -1470,35 +1469,6 @@
     return r ? r.name : 'eigener Kurve';
   }
 
-  // Karte auf der Startseite (Daten aus /api/state)
-  function renderGrowthCard() {
-    var box = $('#growth');
-    var s = state.state;
-    if (!s || !('growth' in s)) { box.hidden = true; return; }
-    box.hidden = false;
-    var g = s.growth;
-    $('#growth-empty').hidden = !!g;
-    $('#growth-brief').hidden = !g;
-    $('#btn-growth-open').hidden = !g;
-    if (!g) return;
-    var main = $('#growth-main');
-    if (isNum(g.weight_g)) {
-      main.textContent = fmtInt.format(g.weight_g) + ' g' + (isNum(g.weight_percentile) ? ' · ' + fmtP(g.weight_percentile) + ' nach ' + refShort(g.ref) : '');
-    } else {
-      main.textContent = 'Noch nicht gewogen';
-    }
-    var sub = [];
-    if (isNum(g.length_cm)) sub.push('Länge ' + fmtDec1.format(g.length_cm) + ' cm' + (isNum(g.length_percentile) ? ' · ' + fmtP(g.length_percentile) : ''));
-    if (isNum(g.hc_cm)) sub.push('Kopf ' + fmtDec1.format(g.hc_cm) + ' cm' + (isNum(g.hc_percentile) ? ' · ' + fmtP(g.hc_percentile) : ''));
-    $('#growth-sub').textContent = sub.join(' · ');
-    $('#growth-sub').hidden = !sub.length;
-    var line = [];
-    if (isNum(g.age_days)) line.push(ageText(isNum(g.corrected_age_days) ? g.corrected_age_days : g.age_days) + (isNum(g.corrected_age_days) ? ' korrigiert' : ' alt'));
-    if (g.weight_date) line.push('gewogen ' + fmtYmd(g.weight_date));
-    if (isNum(g.gain_g_per_week)) line.push(signed(g.gain_g_per_week, ' g') + ' pro Woche');
-    $('#growth-gain').textContent = line.join(' · ');
-  }
-
   function growthQuery() {
     var q = [];
     if (growthView.ref) q.push('ref=' + encodeURIComponent(growthView.ref));
@@ -1516,35 +1486,50 @@
     });
   }
 
-  function openGrowth() {
-    growthView.ref = null;
-    growthView.range = null;
-    $('#growth-chart').textContent = '';
-    openDialog($('#dlg-growth'));
-    loadGrowth().then(function (g) {
-      if (g && !g.profile.birth_date) openProfile();
+  // ---------- Ansichten (Tabs) ----------
+
+  var currentView = 'home';
+  function showView(name, fromHash) {
+    if (name !== 'growth') name = 'home';
+    var changed = name !== currentView;
+    currentView = name;
+    $('#view-home').hidden = name !== 'home';
+    $('#view-growth').hidden = name !== 'growth';
+    $$('.tab').forEach(function (t) {
+      if (t.getAttribute('data-view') === name) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
     });
+    if (!fromHash) {
+      var hash = name === 'growth' ? '#wachstum' : '';
+      if (location.hash !== hash) {
+        try { history.pushState(null, '', hash || location.pathname + location.search); } catch (e) { location.hash = hash; }
+      }
+    }
+    if (changed) window.scrollTo(0, 0);
+    if (name === 'growth') loadGrowth();
   }
+  function viewFromHash() { return location.hash === '#wachstum' ? 'growth' : 'home'; }
 
   function renderGrowthSheet() {
     var g = state.growth;
     if (!g) return;
     var p = g.profile || {};
-    $('#growth-dlg-title').textContent = p.name ? 'Wachstum · ' + p.name : 'Wachstum';
+    $('#growth-title').textContent = p.name ? 'Wachstum · ' + p.name : 'Wachstum';
+    var ready = !!p.birth_date;
+    $('#growth-setup').hidden = ready;
+    $('#growth-content').hidden = !ready;
     var age = '';
     if (isNum(g.age_days)) {
       age = ageText(g.age_days) + ' alt';
       if (isNum(g.corrected_age_days)) age += ' · korrigiert ' + ageText(g.corrected_age_days);
-    } else {
-      age = 'Ohne Geburtstag kann Boobo nichts einordnen.';
     }
-    if (!g.sex) age += ' · Geschlecht fehlt noch';
+    if (!g.sex && ready) age += ' · Geschlecht fehlt noch';
     $('#growth-age').textContent = age;
+    $('#growth-age').hidden = !age;
 
     // Kurven-Auswahl
     var seg = $('#growth-ref-seg');
     seg.textContent = '';
-    seg.style.gridTemplateColumns = 'repeat(' + Math.min(4, g.refs.length) + ', minmax(0, 1fr))';
     g.refs.forEach(function (r) {
       var b = el('button', { type: 'button', class: 'seg' + (r.available ? '' : ' unavailable'), 'data-value': r.id, text: refShort(r.id, g.refs) });
       b.setAttribute('aria-pressed', g.ref && g.ref.id === r.id ? 'true' : 'false');
@@ -1833,7 +1818,7 @@
 
   function afterGrowthChange() {
     var jobs = [refresh()];
-    if ($('#dlg-growth').open) jobs.push(loadGrowth());
+    if (currentView === 'growth') jobs.push(loadGrowth());
     return Promise.all(jobs);
   }
 
@@ -1917,7 +1902,6 @@
       var seg = $('#profile-ref-seg');
       seg.textContent = '';
       var refs = g.refs.filter(function (r) { return r.available; });
-      seg.style.gridTemplateColumns = 'repeat(' + Math.min(4, refs.length) + ', minmax(0, 1fr))';
       refs.forEach(function (r) {
         seg.appendChild(el('button', { type: 'button', class: 'seg', 'data-value': r.id, 'aria-pressed': 'false', text: refShort(r.id, g.refs) }));
       });
@@ -2071,15 +2055,20 @@
   }
 
   function initGrowth() {
-    $('#btn-growth-open').addEventListener('click', openGrowth);
-    $('#btn-growth-setup').addEventListener('click', function () { state.growth = null; openProfile(); });
-    $('#btn-measure-add').addEventListener('click', function () {
-      if (!state.growth) api('GET', '/api/growth').then(function (g) { state.growth = g; }).catch(function () {});
-      openMeasure(null);
+    $('#btn-growth-setup').addEventListener('click', openProfile);
+    $$('.tab').forEach(function (t) {
+      t.addEventListener('click', function () { showView(t.getAttribute('data-view')); });
     });
+    window.addEventListener('popstate', function () { showView(viewFromHash(), true); });
+    window.addEventListener('hashchange', function () { showView(viewFromHash(), true); });
+    if (viewFromHash() === 'growth') showView('growth', true);
     $('#btn-growth-measure').addEventListener('click', function () { openMeasure(null); });
     $('#btn-growth-profile').addEventListener('click', openProfile);
-    $('#btn-settings-profile').addEventListener('click', function () { state.growth = null; openProfile(); });
+    $('#btn-settings-profile').addEventListener('click', function () {
+      closeDialog($('#dlg-settings'));
+      if (currentView !== 'growth') showView('growth');
+      openProfile();
+    });
     $('#btn-growth-import').addEventListener('click', function () { openImport('dk'); });
     $('#form-measure').addEventListener('submit', submitMeasure);
     $('#btn-measure-delete').addEventListener('click', deleteMeasure);

@@ -44,7 +44,7 @@
     </button>
   </header>
 
-  <main class="app">
+  <main class="app view" id="view-home">
     <section id="status" class="status card" aria-live="polite">
       <div class="status-main">
         <div class="ring-wrap">
@@ -112,28 +112,89 @@
       <p id="summary-diapers" class="summary-line" hidden></p>
     </section>
 
-    <section id="growth" class="growth card" aria-labelledby="growth-title" hidden>
-      <div class="card-head">
-        <h2 id="growth-title" class="section-title">Wachstum</h2>
-        <button id="btn-growth-open" class="text-link" type="button">Kurven</button>
-      </div>
-      <div id="growth-empty" hidden>
-        <p class="summary-line">Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.</p>
-        <button id="btn-growth-setup" class="btn ghost link-btn growth-cta" type="button">Geburtsdaten eintragen</button>
-      </div>
-      <div id="growth-brief" hidden>
-        <p id="growth-main" class="summary-line main"></p>
-        <p id="growth-sub" class="summary-line"></p>
-        <p id="growth-gain" class="summary-line"></p>
-        <button id="btn-measure-add" class="btn ghost link-btn growth-cta" type="button">Messung eintragen</button>
-      </div>
-    </section>
-
     <section class="history" aria-label="Bisher">
       <h2 class="section-title">Bisher</h2>
       <div id="history"></div>
     </section>
   </main>
+
+  <main class="app view" id="view-growth" hidden aria-labelledby="growth-title">
+    <div class="growth-head">
+      <h2 id="growth-title" class="page-title">Wachstum</h2>
+      <p id="growth-age" class="page-sub"></p>
+    </div>
+
+    <section id="growth-setup" class="card growth-setup" hidden>
+      <p class="summary-line main">Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.</p>
+      <p class="summary-line">Geschlecht, Geburtstag, Maße bei Geburt und eure Größen. Alles lässt sich später ändern.</p>
+      <button type="button" class="btn primary link-btn growth-cta" id="btn-growth-setup">Geburtsdaten eintragen</button>
+    </section>
+
+    <div id="growth-content" hidden>
+      <div class="growth-actions">
+        <button type="button" class="btn primary" id="btn-growth-measure">Messung eintragen</button>
+        <button type="button" class="btn ghost" id="btn-growth-profile">Geburtsdaten</button>
+      </div>
+
+      <section class="card growth-chart-card">
+      <div class="field">
+        <span class="field-label" id="growth-ref-label">Kurven</span>
+        <div class="segmented neutral ref-seg" id="growth-ref-seg" role="radiogroup" aria-labelledby="growth-ref-label"></div>
+        <span class="hint" id="growth-ref-hint"></span>
+      </div>
+
+      <div class="segmented three neutral" id="growth-measure-seg" role="radiogroup" aria-label="Messgröße">
+        <button type="button" class="seg" data-value="weight" aria-pressed="true">Gewicht</button>
+        <button type="button" class="seg" data-value="length" aria-pressed="false">Länge</button>
+        <button type="button" class="seg" data-value="hc" aria-pressed="false">Kopf</button>
+      </div>
+
+      <div class="chart-wrap">
+        <div id="growth-chart" class="chart" role="img" aria-label="Wachstumskurve"></div>
+        <p id="growth-chart-note" class="hint"></p>
+      </div>
+      <div class="chips range-chips" id="growth-range" role="group" aria-label="Zeitraum">
+        <button type="button" class="chip" data-days="91" aria-pressed="false">3 Mon.</button>
+        <button type="button" class="chip" data-days="183" aria-pressed="false">6 Mon.</button>
+        <button type="button" class="chip" data-days="365" aria-pressed="false">1 Jahr</button>
+        <button type="button" class="chip" data-days="730" aria-pressed="false">2 Jahre</button>
+        <button type="button" class="chip" data-days="1826" aria-pressed="false">5 Jahre</button>
+      </div>
+
+      </section>
+
+      <section class="growth-section" id="growth-gains-wrap" hidden>
+        <h3 class="section-title">Zunahme</h3>
+        <p id="growth-early" class="growth-text" hidden></p>
+        <ul id="growth-velocity" class="growth-list"></ul>
+        <ul id="growth-gains" class="growth-list"></ul>
+      </section>
+
+      <section class="growth-section">
+        <h3 class="section-title">Messungen</h3>
+        <ul id="growth-measurements" class="growth-table"></ul>
+      </section>
+
+      <section class="growth-section" id="growth-target-wrap">
+        <h3 class="section-title">Zielgröße</h3>
+        <div id="growth-target" class="growth-text"></div>
+      </section>
+
+      <p id="growth-source" class="meta growth-source"></p>
+      <button type="button" class="text-link growth-import-link" id="btn-growth-import">Andere Kurve importieren</button>
+    </div>
+  </main>
+
+  <nav class="tabbar" aria-label="Bereiche">
+    <button type="button" class="tab" data-view="home" aria-current="page">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="8.5" cy="12" r="4.5" fill="currentColor"/><circle cx="16" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Stillen</span>
+    </button>
+    <button type="button" class="tab" data-view="growth">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 4v16h16M7 15c3-1 5-4 6.5-7.5M7 18.5c4-1 7.5-4 10-9"/></svg>
+      <span>Wachstum</span>
+    </button>
+  </nav>
 
   <div id="toast" class="toast" hidden role="status">
     <span class="toast-text"><span id="toast-text" class="toast-title"></span><span id="toast-sub" class="toast-sub" hidden></span></span>
@@ -359,66 +420,6 @@
         <button type="submit" class="btn primary">Speichern</button>
       </div>
       <button type="button" class="btn danger-ghost full" id="btn-med-delete">Löschen</button>
-    </form>
-  </dialog>
-
-  <!-- Wachstum: Kurven und Messungen -->
-  <dialog id="dlg-growth" class="sheet sheet-tall" aria-labelledby="growth-dlg-title">
-    <form method="dialog">
-      <h2 id="growth-dlg-title">Wachstum</h2>
-      <p id="growth-age" class="dlg-sub"></p>
-
-      <div class="field">
-        <span class="field-label" id="growth-ref-label">Kurven</span>
-        <div class="segmented neutral ref-seg" id="growth-ref-seg" role="radiogroup" aria-labelledby="growth-ref-label"></div>
-        <span class="hint" id="growth-ref-hint"></span>
-      </div>
-
-      <div class="segmented three neutral" id="growth-measure-seg" role="radiogroup" aria-label="Messgröße">
-        <button type="button" class="seg" data-value="weight" aria-pressed="true">Gewicht</button>
-        <button type="button" class="seg" data-value="length" aria-pressed="false">Länge</button>
-        <button type="button" class="seg" data-value="hc" aria-pressed="false">Kopf</button>
-      </div>
-
-      <div class="chart-wrap">
-        <div id="growth-chart" class="chart" role="img" aria-label="Wachstumskurve"></div>
-        <p id="growth-chart-note" class="hint"></p>
-      </div>
-      <div class="chips range-chips" id="growth-range" role="group" aria-label="Zeitraum">
-        <button type="button" class="chip" data-days="91" aria-pressed="false">3 Mon.</button>
-        <button type="button" class="chip" data-days="183" aria-pressed="false">6 Mon.</button>
-        <button type="button" class="chip" data-days="365" aria-pressed="false">1 Jahr</button>
-        <button type="button" class="chip" data-days="730" aria-pressed="false">2 Jahre</button>
-        <button type="button" class="chip" data-days="1826" aria-pressed="false">5 Jahre</button>
-      </div>
-
-      <section class="growth-section" id="growth-gains-wrap" hidden>
-        <h3 class="section-title">Zunahme</h3>
-        <p id="growth-early" class="growth-text" hidden></p>
-        <ul id="growth-velocity" class="growth-list"></ul>
-        <ul id="growth-gains" class="growth-list"></ul>
-      </section>
-
-      <section class="growth-section" id="growth-target-wrap">
-        <h3 class="section-title">Zielgröße</h3>
-        <div id="growth-target" class="growth-text"></div>
-      </section>
-
-      <section class="growth-section">
-        <h3 class="section-title">Messungen</h3>
-        <ul id="growth-measurements" class="growth-table"></ul>
-      </section>
-
-      <p id="growth-source" class="meta growth-source"></p>
-
-      <div class="dlg-actions">
-        <button type="button" class="btn ghost" id="btn-growth-profile">Geburtsdaten</button>
-        <button type="button" class="btn primary" id="btn-growth-measure">Messung eintragen</button>
-      </div>
-      <div class="dlg-actions">
-        <button type="button" class="btn ghost grow" id="btn-growth-import">Kurve importieren</button>
-        <button type="button" class="btn ghost grow" data-close>Schließen</button>
-      </div>
     </form>
   </dialog>
 

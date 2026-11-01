@@ -71,9 +71,9 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 
 | Stelle | Text |
 |---|---|
-| Karte Titel | „Wachstum“ · Link „Kurven“ |
-| Karte leer | „Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.“ · Button „Geburtsdaten eintragen“ |
-| Karte | „4.130 g · P52 nach WHO“ / „Länge 53,5 cm · P77 · Kopf 36,2 cm · P70“ / „4 Wochen, 2 Tage alt · gewogen 30. Okt. · +238 g pro Woche“ · Button „Messung eintragen“ |
+| Tabs | „Stillen“ / „Wachstum“ |
+| Seite Titel | „Wachstum · Bobo“ / „4 Wochen, 2 Tage alt“ · Buttons „Messung eintragen“ / „Geburtsdaten“ |
+| Seite leer | „Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.“ / „Geschlecht, Geburtstag, Maße bei Geburt und eure Größen. Alles lässt sich später ändern.“ · Button „Geburtsdaten eintragen“ |
 | Messung Toast | „4.200 g, notiert.“ zweite Zeile „Groß geworden, Bobo.“ |
 | Messung Dialog | „Messung eintragen“ / „Messung bearbeiten“ · „Gewicht in Gramm“, „Länge in cm“, „Kopfumfang in cm“, „Gemessen von“: Sundhedsplejerske / Arzt / Zuhause / Klinik · Hinweis „Alles leer lassen, was nicht gemessen wurde.“ |
 | Messungen leer | „Noch nichts gemessen. Morgen kommt die Sundhedsplejerske.“ |

@@ -322,9 +322,11 @@ length_cm, length_percentile, hc_cm, hc_percentile, gain_g_per_week }`.
 ### `GET /api/export.csv?what=measurements` → `boobo-wachstum.csv` (`id,date,weight_g,length_cm,hc_cm,source,note`).
 
 ## Frontend
-- Startseite: Karte „Wachstum“ unter der Tagesbilanz. Ohne Geburtstag: „Geburtsdaten eintragen“. Sonst letztes Gewicht
-  mit Perzentile, Länge und Kopf, Alter, Zunahme pro Woche, Button „Messung eintragen“, Link „Kurven“.
-- Dialog „Wachstum“: Kurvenwahl (WHO, Deutschland, Dänemark, eigene; nicht importierte gestrichelt, Tipp öffnet den
-  Import), Gewicht/Länge/Kopf, SVG-Diagramm mit Perzentilen-Linien, Fläche zwischen äußerster Linie, Messpunkten,
-  Linie für heute und gestricheltem Zielkanal, Zeitraum 3 Monate bis 5 Jahre, Abschnitte Zunahme, Zielgröße, Messungen.
+- Leiste unten mit zwei Tabs: „Stillen“ (bisherige Startseite, unverändert) und „Wachstum“ (eigene Seite, `#wachstum`,
+  Zurück-Taste des Handys wechselt zurück). Die Startseite bleibt fürs nächtliche Eintragen kurz.
+- Seite „Wachstum“: Titel mit Name und Alter, Buttons „Messung eintragen“ und „Geburtsdaten“. Ohne Geburtstag nur eine
+  Karte „Geburtsdaten eintragen“. Sonst Karte mit Kurvenwahl (WHO, Deutschland, Dänemark, eigene; nicht importierte
+  gestrichelt, Tipp öffnet den Import), Gewicht/Länge/Kopf, SVG-Diagramm (Perzentilen-Linien, Fläche zwischen den
+  äußersten Linien, Messpunkte, Linie für heute, gestrichelter Zielkanal) und Zeitraum 3 Monate bis 5 Jahre.
+  Darunter Zunahme, Messungen, Zielgröße, Quelle und „Andere Kurve importieren“.
 - Dialoge „Messung“, „Geburtsdaten“ (auch über Einstellungen), „Kurve importieren“ (Datei oder eingefügte Tabelle).
