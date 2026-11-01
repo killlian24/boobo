@@ -45,6 +45,49 @@ Die Taster-Automation ist nicht im Package (sie braucht einen echten Taster-Sens
 bleibt `lovelace_card.yaml`. Die Einzeldateien unten sind weiterhin gültig, wer sie schon eingebunden hat,
 braucht das Package nicht.
 
+
+## Sprachsteuerung über Google Nest (Google Assistant)
+
+Voraussetzung: die Google-Assistant-Integration ist eingerichtet (manuell oder über Home Assistant Cloud).
+Skripte erscheinen bei Google als **Szenen** und werden mit „Hey Google, aktiviere …“ gestartet.
+
+1. Skripte freigeben. Bei der manuellen Integration in `configuration.yaml` unter `google_assistant: entity_config:`
+   (bei Home Assistant Cloud stattdessen unter Einstellungen → Sprachassistenten → Google Assistant → Entitäten freigeben):
+   ```yaml
+   google_assistant:
+     entity_config:
+       script.boobo_links:    { expose: true, name: Bobo links,   aliases: [Bobo hat links getrunken] }
+       script.boobo_rechts:   { expose: true, name: Bobo rechts,  aliases: [Bobo hat rechts getrunken] }
+       script.boobo_beide:    { expose: true, name: Bobo beide }
+       script.boobo_flasche:  { expose: true, name: Bobo Flasche }
+       script.boobo_windel_nass: { expose: true, name: Windel nass }
+       script.boobo_windel_voll: { expose: true, name: Windel voll }
+       script.boobo_rueckgaengig: { expose: true, name: Bobo rückgängig }
+       script.boobo_ansage:   { expose: true, name: Bobo Status, aliases: [Bobo Bericht] }
+       script.boobo_mama_ansage: { expose: true, name: Mama Medikamente }
+       script.boobo_paracetamol: { expose: true, name: Paracetamol genommen }
+       script.boobo_ibuprofen:   { expose: true, name: Ibuprofen genommen }
+       script.boobo_magenschutz: { expose: true, name: Magenschutz genommen }
+   ```
+2. Home Assistant neu starten, dann Entwicklerwerkzeuge → Aktionen → `google_assistant.request_sync` ausführen
+   (oder „Hey Google, synchronisiere meine Geräte“).
+3. Sprechen: „Hey Google, aktiviere Bobo links“, „… aktiviere Windel nass“, „… aktiviere Bobo Status“.
+4. Natürlichere Sätze über **Routinen in der Google-Home-App** (Automatisierungen → Neu → Starter „Wenn ich sage“):
+   | Sagen | Aktion in der Routine |
+   |---|---|
+   | „Bobo hat links getrunken“ | Szene „Bobo links“ aktivieren |
+   | „Bobo hat rechts getrunken“ | Szene „Bobo rechts“ |
+   | „Bobo hatte die Flasche“ | Szene „Bobo Flasche“ |
+   | „Windel war nass“ / „Windel war voll“ | Szene „Windel nass“ / „Windel voll“ |
+   | „Wann hat Bobo getrunken?“ | Szene „Bobo Status“ (der Lautsprecher antwortet) |
+   | „Ich habe Paracetamol genommen“ | Szene „Paracetamol genommen“ |
+   | „Was darf ich nehmen?“ | Szene „Mama Medikamente“ |
+
+Ansagen: `script.boobo_ansage` und `script.boobo_mama_ansage` sprechen über `tts.cloud_say` auf dem Lautsprecher
+`media_player.nest_lautsprecher` (im Package anpassen; ohne Home Assistant Cloud z. B. `tts.google_translate_say`).
+Die Hunger-Erinnerung sagt zwischen 8 und 21 Uhr zusätzlich in der Küche Bescheid, nachts nur per Handy.
+Der Doppelschutz gilt auch per Stimme: innerhalb von 10 Minuten wird nichts doppelt notiert.
+
 ## 1. NAS-IP eintragen
 
 In allen Dateien steht der Platzhalter `NAS-IP`. Ersetze ihn durch die IP des NAS, z. B. `192.168.1.20`.

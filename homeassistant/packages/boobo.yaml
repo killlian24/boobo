@@ -428,6 +428,80 @@ script:
                 channel: Boobo
             continue_on_error: true
 
+  # --- Sprachsteuerung (Google Assistant stellt Skripte als Szenen bereit: „Hey Google, aktiviere Bobo links“) ---
+  # Szenen können keine Parameter übergeben, deshalb je ein Skript pro Medikament.
+  boobo_paracetamol:
+    alias: "Boobo: Paracetamol genommen"
+    icon: mdi:pill
+    mode: single
+    sequence:
+      - action: script.boobo_medikament_genommen
+        data: { medication_id: 1 }
+
+  boobo_ibuprofen:
+    alias: "Boobo: Ibuprofen genommen"
+    icon: mdi:pill
+    mode: single
+    sequence:
+      - action: script.boobo_medikament_genommen
+        data: { medication_id: 2 }
+
+  boobo_magenschutz:
+    alias: "Boobo: Magenschutz genommen"
+    icon: mdi:pill
+    mode: single
+    sequence:
+      - action: script.boobo_medikament_genommen
+        data: { medication_id: 3 }
+
+  # Ansage auf dem Lautsprecher: „Hey Google, aktiviere Bobo Status“.
+  # tts.cloud_say braucht Home Assistant Cloud; ohne Cloud z. B. tts.google_translate_say verwenden.
+  boobo_ansage:
+    alias: "Boobo: Status ansagen"
+    description: "Sagt auf dem Lautsprecher, wann Bobo zuletzt getrunken hat und welche Seite dran ist."
+    icon: mdi:account-voice
+    mode: single
+    sequence:
+      - action: tts.cloud_say
+        data:
+          entity_id: media_player.nest_lautsprecher   # Entity-ID eures Nest-/Cast-Lautsprechers
+          language: de-DE
+          message: >-
+            {%- set last = state_attr('sensor.boobo_status', 'last') -%}
+            {%- if last is none -%}
+              Noch nichts notiert.
+            {%- else -%}
+              {%- set m = states('sensor.boobo_minuten_seit_stillen') | int(0) -%}
+              {%- set h = m // 60 -%}{%- set r = m % 60 -%}
+              {%- if h == 0 -%}{%- set vor = 'vor ' ~ r ~ ' Minuten' -%}
+              {%- elif h == 1 -%}{%- set vor = 'vor einer Stunde und ' ~ r ~ ' Minuten' -%}
+              {%- else -%}{%- set vor = 'vor ' ~ h ~ ' Stunden und ' ~ r ~ ' Minuten' -%}{%- endif -%}
+              Zuletzt um {{ as_timestamp(last.at) | timestamp_custom('%H:%M', true) }} {{ states('sensor.boobo_letzte_seite') }}, {{ vor }}.
+              {% if is_state('binary_sensor.boobo_bobo_hat_hunger', 'on') %} Bobo hat bestimmt Hunger.{% endif %}
+              Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran.
+            {%- endif -%}
+
+  # „Hey Google, aktiviere Mama Medikamente“
+  boobo_mama_ansage:
+    alias: "Boobo: Medikamente ansagen"
+    icon: mdi:account-voice
+    mode: single
+    sequence:
+      - action: tts.cloud_say
+        data:
+          entity_id: media_player.nest_lautsprecher   # Entity-ID eures Nest-/Cast-Lautsprechers
+          language: de-DE
+          message: >-
+            {%- set meds = state_attr('sensor.boobo_status', 'medications') or [] -%}
+            {%- if meds | length == 0 -%}
+              Keine Medikamente eingetragen.
+            {%- else -%}
+              {%- for med in meds -%}
+                {%- if med.possible_now %}{{ med.name }} geht wieder{% else %}{{ med.name }} wieder ab {{ as_timestamp(med.next_possible_at) | timestamp_custom('%H:%M', true) }}{% endif -%}
+                {{- ', ' if not loop.last else '.' -}}
+              {%- endfor -%}
+            {%- endif -%}
+
 input_text:
   boobo_letzter_eintrag:
     name: "Boobo letzter Eintrag"
@@ -465,6 +539,19 @@ automation:
               - action: URI
                 title: "Boobo öffnen"
                 uri: "http://NAS-IP:8099"
+
+      # Zusätzlich tagsüber eine Ansage in der Küche. Nachts nur das Handy.
+      - if:
+          - condition: time
+            after: "08:00:00"
+            before: "21:00:00"
+        then:
+          - action: tts.cloud_say
+            data:
+              entity_id: media_player.nest_lautsprecher   # Entity-ID eures Nest-/Cast-Lautsprechers
+              language: de-DE
+              message: "Bobo hat bestimmt Hunger. Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} Minuten. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
+            continue_on_error: true
 
       # Handy 2 – Block kopieren und `notify.mobile_app_<handy2>` eintragen:
       # - action: notify.mobile_app_handy2
