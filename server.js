@@ -1298,7 +1298,12 @@ function nextCustomRefId(refs) {
 
 function buildImportedRef(body, refs) {
   let id = body.id;
-  if (id === undefined || id === null || id === '') id = nextCustomRefId(refs);
+  if (id === undefined || id === null || id === '') {
+    // gleicher Name wie eine schon importierte Kurve → diese ergänzen
+    const name = typeof body.name === 'string' ? body.name.trim().toLowerCase() : '';
+    const same = name ? refs.list().find((r) => !r.builtin && r.available && r.name.toLowerCase() === name) : null;
+    id = same ? same.id : nextCustomRefId(refs);
+  }
   if (typeof id !== 'string' || !REF_ID_RE.test(id)) throw new HttpError(400, 'id must match [a-z0-9-], max 32 characters');
   if (refs.isBuiltin(id)) throw new HttpError(400, `${id} is a built-in reference and cannot be replaced`);
   const isDk = id === 'dk';

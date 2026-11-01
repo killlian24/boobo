@@ -1646,9 +1646,20 @@
       if (!r.available) b.setAttribute('aria-label', refShort(r.id) + ', noch nicht importiert');
       seg.appendChild(b);
     });
-    var hint = g.ref ? (g.ref.title || g.ref.name) + '. ' + (g.ref.description || '') : '';
-    if (g.ref_unavailable) hint = refShort(g.ref_unavailable, g.refs) + ' ist noch nicht importiert, deshalb WHO. ' + hint;
-    $('#growth-ref-hint').textContent = hint;
+    // Befund bleibt sichtbar, Erklärung kommt hinter das „i“
+    var hint = $('#growth-ref-hint');
+    hint.textContent = g.ref_unavailable ? refShort(g.ref_unavailable, g.refs) + ' nicht verfügbar, WHO gezeigt' : '';
+    hint.hidden = !g.ref_unavailable;
+    var info = [];
+    if (g.ref) {
+      info.push((g.ref.title || g.ref.name) + '. ' + (g.ref.description || ''));
+      info.push('Linien: ' + (g.lines || []).map(function (l) { return l.label; }).join(', ') + '.');
+      if (g.ref.id === 'dk') info.push('Zwischen den Werten alle 3 Monate glättet Boobo monoton (PCHIP).');
+      info.push('Gestrichelt bei Länge: Zielkanal aus euren Größen.');
+      if (g.correction_days > 0) info.push('Geboren vor 37+0: Punkte und Perzentilen beim korrigierten Alter, bis 2 Jahre.');
+      if (g.ref.source) info.push('Quelle: ' + g.ref.source);
+    }
+    $('#info-ref').textContent = info.join(' ');
 
     segSet($('#growth-measure-seg'), growthView.measure);
     $$('#growth-range .chip').forEach(function (c) {
@@ -1659,7 +1670,6 @@
     renderGains(g);
     renderTarget(g);
     renderMeasurementList(g);
-    $('#growth-source').textContent = g.ref && g.ref.source ? 'Quelle: ' + g.ref.source : '';
   }
 
   // ---------- Diagramm (SVG) ----------
@@ -1703,10 +1713,8 @@
     var c = g.curves && g.curves[measure];
     var field = { weight: 'weight_g', length: 'length_cm', hc: 'hc_cm' }[measure];
     if (!g.sex || !c) {
-      var msg = !g.sex
-        ? 'Für die Kurven braucht Boobo Geschlecht und Geburtstag.'
-        : 'Die Kurve ' + refShort(g.ref && g.ref.id, g.refs) + ' hat für ' + MEASURE_NAMES[measure] + ' in diesem Zeitraum keine Werte.';
-      if (g.sex && g.ref && g.ref.id === 'de' && measure === 'hc') msg = 'Die deutsche Kopfumfang-Kurve (KiGGS) beginnt erst mit 4 Monaten. Größeren Zeitraum wählen oder WHO nehmen.';
+      var msg = !g.sex ? 'Geschlecht fehlt' : 'Keine Werte für ' + MEASURE_NAMES[measure] + ' in diesem Zeitraum';
+      if (g.sex && g.ref && g.ref.id === 'de' && measure === 'hc') msg = 'KiGGS-Kopfumfang erst ab 4 Monaten';
       root.appendChild(el('p', { class: 'empty-hint chart-empty', text: msg }));
       return;
     }
@@ -1799,55 +1807,53 @@
     root.appendChild(svg);
 
     var latest = g.latest && g.latest[measure];
-    var parts = [];
-    if (latest && isNum(latest.value)) {
-      parts.push('Zuletzt ' + fmtValue(measure, latest.value) + (isNum(latest.p) ? ', ' + fmtP(latest.p) + ' (' + fmtZ(latest.z) + ').' : '.'));
-    } else {
-      parts.push('Noch kein ' + MEASURE_NAMES[measure] + ' eingetragen.');
-    }
-    if (g.correction_days > 0) parts.push('Punkte beim korrigierten Alter.');
-    if (c.target) parts.push('Gestrichelt: Zielkanal aus euren Größen.');
-    note.textContent = parts.join(' ');
-    root.setAttribute('aria-label', MEASURE_NAMES[measure] + ' nach ' + refShort(g.ref.id, g.refs) + '. ' + parts[0]);
+    var line = latest && isNum(latest.value)
+      ? [fmtValue(measure, latest.value), fmtP(latest.p), fmtZ(latest.z), fmtYmd(latest.date)].filter(Boolean).join(' · ')
+      : 'Noch kein Wert';
+    note.textContent = line;
+    root.setAttribute('aria-label', MEASURE_NAMES[measure] + ' nach ' + refShort(g.ref.id, g.refs) + ': ' + line);
   }
 
   // ---------- Zunahme, Zielgröße, Messungen ----------
+
+  function gRow(main, sub, cls) {
+    return el('li', cls ? { class: cls } : null, [
+      el('span', { class: 'gl-main', text: main }),
+      sub ? el('span', { class: 'gl-sub', text: sub }) : null
+    ]);
+  }
 
   function renderGains(g) {
     var wrap = $('#growth-gains-wrap');
     var early = $('#growth-early');
     var vel = $('#growth-velocity');
     var list = $('#growth-gains');
+    early.textContent = '';
     vel.textContent = '';
     list.textContent = '';
     var e = g.early;
     var any = false;
     if (e && isNum(e.lowest_g)) {
-      var t = 'Tiefster Wert ' + fmtInt.format(e.lowest_g) + ' g am ' + e.lowest_day + '. Tag, ' + fmtDec1.format(e.loss_pct) + ' % unter dem Geburtsgewicht. ';
-      if (isNum(e.regained_day)) t += 'Geburtsgewicht am ' + e.regained_day + '. Tag wieder erreicht.';
-      else t += 'Geburtsgewicht noch nicht wieder erreicht.';
-      var warn = e.loss_pct > 10 || (!isNum(e.regained_day) && isNum(g.age_days) && g.age_days > 14);
-      if (e.loss_pct > 10) t += ' Mehr als 10 %: bitte mit Hebamme oder Sundhedsplejerske besprechen.';
-      else if (warn) t += ' Meist ist es nach 2 Wochen wieder erreicht: beim nächsten Besuch ansprechen.';
-      early.textContent = t;
-      early.classList.toggle('warn', warn);
-      early.hidden = false;
+      var bigLoss = e.loss_pct > 10;
+      early.appendChild(gRow(fmtInt.format(e.lowest_g) + ' g · −' + fmtDec1.format(e.loss_pct) + ' %',
+        'Tiefster Wert · Tag ' + e.lowest_day, bigLoss ? 'warn' : null));
+      if (bigLoss) early.appendChild(gRow('Mehr als 10 % unter Geburtsgewicht', 'Mit Hebamme oder Sundhedsplejerske besprechen', 'warn'));
+      if (isNum(e.regained_day)) {
+        early.appendChild(gRow('Tag ' + e.regained_day, 'Geburtsgewicht wieder erreicht'));
+      } else {
+        var late = isNum(g.age_days) && g.age_days > 14;
+        early.appendChild(gRow('Noch nicht', 'Geburtsgewicht wieder erreicht' + (late ? ' · beim nächsten Besuch ansprechen' : ''), late ? 'warn' : null));
+      }
       any = true;
-    } else {
-      early.hidden = true;
     }
+    early.hidden = !early.childNodes.length;
     (g.velocity || []).forEach(function (v) {
-      vel.appendChild(el('li', null, [
-        el('span', { class: 'gl-main', text: velocityLabel(v) + ': ' + signed(v.increment_g, ' g') }),
-        el('span', { class: 'gl-sub', text: fmtP(v.p) + ' · Median ' + fmtInt.format(v.median_g) + ' g (WHO)' })
-      ]));
+      vel.appendChild(gRow(signed(v.increment_g, ' g') + ' · ' + fmtP(v.p), velocityLabel(v) + ' · WHO-Median ' + fmtInt.format(v.median_g) + ' g'));
       any = true;
     });
     (g.gains || []).slice().reverse().slice(0, 8).forEach(function (x) {
-      list.appendChild(el('li', null, [
-        el('span', { class: 'gl-main', text: signed(x.g_per_week, ' g') + ' pro Woche' }),
-        el('span', { class: 'gl-sub', text: fmtYmd(x.from) + ' bis ' + fmtYmd(x.to) + ' · ' + plural(x.days, 'Tag', 'Tage') + ' · ' + signed(x.diff_g, ' g') })
-      ]));
+      list.appendChild(gRow(signed(x.g_per_week, ' g') + ' pro Woche',
+        fmtYmd(x.from) + ' bis ' + fmtYmd(x.to) + ' · ' + plural(x.days, 'Tag', 'Tage') + ' · ' + signed(x.diff_g, ' g')));
       any = true;
     });
     wrap.hidden = !any;
@@ -1855,20 +1861,28 @@
 
   function renderTarget(g) {
     var box = $('#growth-target');
+    var info = $('#info-target');
     box.textContent = '';
     var t = g.target;
+    var tx = [
+      'Tanner: Mittel der Elterngrößen ' + (g.sex === 'female' ? 'minus' : 'plus') + ' 6,5 cm, Zielbereich ± 8,5 cm (2 SD, AWMF-Leitlinie 174-002).',
+      'Hermanussen und Cole 2003: Ziel-SDS = 0,72 × Mittel der Eltern-SDS, 95-%-Bereich ± 1,6 SDS. Berücksichtigt, dass Kinder großer oder kleiner Eltern näher am Durchschnitt landen.'
+    ];
     if (!t) {
-      box.appendChild(el('p', { text: g.sex ? 'Tragt eure Größen in den Geburtsdaten ein, dann rechnet Boobo die Zielgröße.' : 'Für die Zielgröße braucht Boobo Geschlecht und eure Größen.' }));
+      box.appendChild(gRow(g.sex ? 'Größen der Eltern fehlen' : 'Geschlecht und Größen fehlen', 'Unter Geburtsdaten eintragen'));
+      info.textContent = tx.join(' ');
       return;
     }
-    box.appendChild(el('p', { class: 'target-main', text: 'Tanner: ' + fmtDec1.format(t.tanner.cm) + ' cm' }));
-    box.appendChild(el('p', { class: 'hint', text: 'Bereich ' + fmtDec1.format(t.tanner.min_cm) + ' bis ' + fmtDec1.format(t.tanner.max_cm) + ' cm. Mittel eurer Größen ' + (g.sex === 'male' ? 'plus' : 'minus') + ' 6,5 cm, Bereich ± 8,5 cm.' }));
+    box.appendChild(gRow(fmtDec1.format(t.tanner.cm) + ' cm', 'Tanner · ' + fmtDec1.format(t.tanner.min_cm) + ' bis ' + fmtDec1.format(t.tanner.max_cm) + ' cm'));
     if (t.sds) {
-      box.appendChild(el('p', { class: 'target-main', text: 'Hermanussen und Cole: ' + fmtDec1.format(t.sds.cm) + ' cm · ' + fmtP(t.sds.p) }));
-      box.appendChild(el('p', { class: 'hint', text: 'Bereich ' + fmtDec1.format(t.sds.min_cm) + ' bis ' + fmtDec1.format(t.sds.max_cm) + ' cm. Mama ' + fmtZ(t.sds.mother_sds) + ', Papa ' + fmtZ(t.sds.father_sds) + ', Ziel 0,72 × Mittelwert = ' + fmtZ(t.sds.sds) + ', Bereich ± 1,6 SD, bezogen auf Erwachsene mit ' + t.sds.adult_age_years + ' Jahren (' + refShort(g.ref.id, g.refs) + ').' }));
+      box.appendChild(gRow(fmtDec1.format(t.sds.cm) + ' cm · ' + fmtP(t.sds.p),
+        'Hermanussen-Cole · ' + fmtDec1.format(t.sds.min_cm) + ' bis ' + fmtDec1.format(t.sds.max_cm) + ' cm'));
+      tx.push('Hier: Mama ' + fmtZ(t.sds.mother_sds) + ', Papa ' + fmtZ(t.sds.father_sds) + ', Ziel ' + fmtZ(t.sds.sds) +
+        ', bezogen auf Erwachsene mit ' + t.sds.adult_age_years + ' Jahren (' + refShort(g.ref.id, g.refs) + ').');
     } else {
-      box.appendChild(el('p', { class: 'hint', text: 'Diese Kurve reicht nicht bis ins Erwachsenenalter, deshalb nur Tanner.' }));
+      tx.push('Die gewählte Kurve reicht nicht bis ins Erwachsenenalter, deshalb nur Tanner.');
     }
+    info.textContent = tx.join(' ');
   }
 
   function renderMeasurementList(g) {
@@ -1921,7 +1935,6 @@
     f.note.value = m ? (m.note || '') : '';
     segSet($('.source-seg', $('#form-measure')), m ? (m.source || '') : 'nurse');
     $('#btn-measure-delete').hidden = !m;
-    $('#measure-hint').textContent = 'Alles leer lassen, was nicht gemessen wurde.';
     openDialog($('#dlg-measure'));
   }
 
@@ -2092,7 +2105,6 @@
     var custom = segGet($('#import-target')) === 'custom';
     $('#import-name-wrap').hidden = !custom;
     $('#import-dk-help').hidden = custom;
-    $('#import-custom-help').hidden = !custom || !dkAvailable();
   }
 
   function renderImportedRefs() {
@@ -2170,7 +2182,23 @@
     });
   }
 
+  // „i“ an statischen Abschnitten: data-info nennt das Panel, das ein- und ausgeblendet wird
+  function initInfoButtons() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('.info-btn[data-info]');
+      if (!btn) return;
+      var panel = document.getElementById(btn.getAttribute('data-info'));
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+    });
+    $$('.info-btn[data-info]').forEach(function (b) {
+      if (!b.firstChild) b.appendChild(infoSvg());
+    });
+  }
+
   function initGrowth() {
+    initInfoButtons();
     $('#btn-growth-setup').addEventListener('click', openProfile);
     $$('.tab').forEach(function (t) {
       t.addEventListener('click', function () { showView(t.getAttribute('data-view')); });

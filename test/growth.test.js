@@ -231,6 +231,9 @@ describe('API /api/growth', () => {
     assert.equal((await ctx.api('POST', '/api/growth/refs', { csv: 'foo,bar\n1,2\n3,4' })).status, 400);
     const own = await ctx.api('POST', '/api/growth/refs', { name: 'Test', csv: rows.join('\n') });
     assert.equal(own.json.ref.id, 'eigene-1');
+    const again = await ctx.api('POST', '/api/growth/refs', { name: 'test', csv: len.join('\n') });
+    assert.equal(again.json.ref.id, 'eigene-1', 'gleicher Name ergänzt dieselbe Kurve');
+    assert.deepEqual(again.json.ref.measures, ['weight', 'length']);
 
     assert.equal((await ctx.api('DELETE', '/api/growth/refs/who')).status, 400);
     assert.equal((await ctx.api('DELETE', '/api/growth/refs/meine')).status, 204);

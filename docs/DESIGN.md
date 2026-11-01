@@ -84,3 +84,13 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
   Gitter `--line` 1 px, Balken höchstens 24 px breit mit 4 px Rundung oben, Achsentext 11 px `--text-2`.
   Raster Tag × Stunde: Felder Radius 2, leer `--line` 60 %, 1 Mal 50 %, ab 2 Mal 100 %.
 - Seitenverteilung ist die einzige Stelle mit Seitenfarben (Segmentbalken 8 px, Liste mit Kreis 24 px).
+
+## Ergänzung 6: Wachstum ohne Erklärtexte
+
+- Gleiche Regel wie Statistik: in der Fläche nur Zahlen und Befunde, Erklärungen hinter dem „i“ (`.info-btn` mit
+  `data-info` auf das Panel, `.stats-info`). „i“ bei Kurven (Referenz, Linien, Glättung, Zielkanal, korrigiertes Alter,
+  Quelle), Zunahme und Zielgröße sowie im Import-Dialog.
+- Unter dem Diagramm eine Zeile mit dem letzten Wert: „4.200 g · P43 · z −0,2 · 1. Nov.“.
+- Zunahme und Zielgröße als Zeilen: Zahl fett, darunter Kontext klein. Auffällige Befunde (mehr als 10 % Verlust,
+  Geburtsgewicht nach 14 Tagen nicht erreicht) mit `--tint-r` hinterlegt.
+- Dialoge ohne Hinweissätze.

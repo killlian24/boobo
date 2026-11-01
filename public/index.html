@@ -138,8 +138,7 @@
     </div>
 
     <section id="growth-setup" class="card growth-setup" hidden>
-      <p class="summary-line main">Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.</p>
-      <p class="summary-line">Geschlecht, Geburtstag, Maße bei Geburt und eure Größen. Alles lässt sich später ändern.</p>
+      <p class="summary-line main">Noch keine Geburtsdaten</p>
       <button type="button" class="btn primary link-btn growth-cta" id="btn-growth-setup">Geburtsdaten eintragen</button>
     </section>
 
@@ -151,9 +150,13 @@
 
       <section class="card growth-chart-card">
       <div class="field">
-        <span class="field-label" id="growth-ref-label">Kurven</span>
+        <div class="stats-head">
+          <h3 class="section-title" id="growth-ref-label">Kurven</h3>
+          <button type="button" class="info-btn" data-info="info-ref" aria-label="Erklärung zu „Kurven“" aria-expanded="false" aria-controls="info-ref"></button>
+        </div>
+        <p class="stats-info" id="info-ref" hidden></p>
         <div class="segmented neutral ref-seg" id="growth-ref-seg" role="radiogroup" aria-labelledby="growth-ref-label"></div>
-        <span class="hint" id="growth-ref-hint"></span>
+        <p class="stats-sub" id="growth-ref-hint" hidden></p>
       </div>
 
       <div class="segmented three neutral" id="growth-measure-seg" role="radiogroup" aria-label="Messgröße">
@@ -164,7 +167,7 @@
 
       <div class="chart-wrap">
         <div id="growth-chart" class="gchart" role="img" aria-label="Wachstumskurve"></div>
-        <p id="growth-chart-note" class="hint"></p>
+        <p id="growth-chart-note" class="growth-now"></p>
       </div>
       <div class="chips range-chips" id="growth-range" role="group" aria-label="Zeitraum">
         <button type="button" class="chip" data-days="91" aria-pressed="false">3 Mon.</button>
@@ -177,8 +180,12 @@
       </section>
 
       <section class="growth-section" id="growth-gains-wrap" hidden>
-        <h3 class="section-title">Zunahme</h3>
-        <p id="growth-early" class="growth-text" hidden></p>
+        <div class="stats-head">
+          <h3 class="section-title">Zunahme</h3>
+          <button type="button" class="info-btn" data-info="info-gain" aria-label="Erklärung zu „Zunahme“" aria-expanded="false" aria-controls="info-gain"></button>
+        </div>
+        <p class="stats-info" id="info-gain" hidden>Tiefster Wert: niedrigstes Gewicht in den ersten 3 Wochen. Mehr als 10 % unter dem Geburtsgewicht oder nach 2 Wochen noch nicht wieder erreicht verdient einen Blick der Hebamme oder Sundhedsplejerske. P-Werte bei der Monatszunahme stammen aus den WHO-Zunahme-Standards 2009 (nur bei WHO, bis 12 Monate). Gramm pro Woche: zwischen zwei Messungen hochgerechnet.</p>
+        <ul id="growth-early" class="growth-list" hidden></ul>
         <ul id="growth-velocity" class="growth-list"></ul>
         <ul id="growth-gains" class="growth-list"></ul>
       </section>
@@ -189,11 +196,14 @@
       </section>
 
       <section class="growth-section" id="growth-target-wrap">
-        <h3 class="section-title">Zielgröße</h3>
-        <div id="growth-target" class="growth-text"></div>
+        <div class="stats-head">
+          <h3 class="section-title">Zielgröße</h3>
+          <button type="button" class="info-btn" data-info="info-target" aria-label="Erklärung zu „Zielgröße“" aria-expanded="false" aria-controls="info-target"></button>
+        </div>
+        <p class="stats-info" id="info-target" hidden></p>
+        <ul id="growth-target" class="growth-list"></ul>
       </section>
 
-      <p id="growth-source" class="meta growth-source"></p>
       <button type="button" class="text-link growth-import-link" id="btn-growth-import">Andere Kurve importieren</button>
     </div>
   </main>
@@ -491,7 +501,6 @@
         <span class="field-label">Notiz (optional)</span>
         <input type="text" name="note" maxlength="200" placeholder="z. B. nach dem Stillen, ohne Windel">
       </label>
-      <p class="hint" id="measure-hint"></p>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
         <button type="submit" class="btn primary">Speichern</button>
@@ -514,7 +523,6 @@
           <button type="button" class="seg" data-value="female" aria-pressed="false">Mädchen</button>
           <button type="button" class="seg" data-value="male" aria-pressed="false">Junge</button>
         </div>
-        <span class="hint">Die Kurven sind für Mädchen und Jungen getrennt.</span>
       </div>
       <label class="field">
         <span class="field-label">Geburtstag</span>
@@ -530,7 +538,6 @@
           <input type="number" name="gestation_days" min="0" max="6" step="1" inputmode="numeric" placeholder="0 bis 6">
         </label>
       </div>
-      <p class="hint profile-hint">Vor 37+0 rechnet Boobo bis zum 2. Geburtstag mit korrigiertem Alter.</p>
       <label class="field">
         <span class="field-label">Geburtsgewicht in Gramm</span>
         <input type="text" name="birth_weight" inputmode="decimal" placeholder="z. B. 3400" autocomplete="off">
@@ -555,7 +562,6 @@
           <input type="text" name="father_height" inputmode="decimal" placeholder="z. B. 184" autocomplete="off">
         </label>
       </div>
-      <p class="hint profile-hint">Aus euren Größen berechnet Boobo die Zielgröße.</p>
       <div class="field">
         <span class="field-label" id="profile-ref-label">Kurven</span>
         <div class="segmented neutral ref-seg" id="profile-ref-seg" role="radiogroup" aria-labelledby="profile-ref-label" data-name="ref"></div>
@@ -570,7 +576,11 @@
   <!-- Referenzkurve importieren -->
   <dialog id="dlg-import" class="sheet">
     <form method="dialog" id="form-import" novalidate>
-      <h2>Kurve importieren</h2>
+      <div class="stats-head sheet-head">
+        <h2>Kurve importieren</h2>
+        <button type="button" class="info-btn" data-info="info-import" aria-label="Erklärung zum Import" aria-expanded="false" aria-controls="info-import"></button>
+      </div>
+      <p class="stats-info" id="info-import" hidden>CSV oder JSON mit den Spalten Messgröße, Geschlecht, Alter, L, M, S (auch nu, mu, sigma). Gewicht in kg, Länge und Kopf in cm. Aus Excel oder Word kopieren und einfügen geht auch. Fehlt eine Spalte, gilt die Auswahl unten für die ganze Tabelle. Mehrere Importe mit demselben Namen ergänzen sich, z. B. erst Gewicht, dann Länge.</p>
       <div class="field" id="import-target-wrap">
         <span class="field-label" id="import-target-label">Wofür?</span>
         <div class="segmented two neutral" id="import-target" role="radiogroup" aria-labelledby="import-target-label" data-name="target">
@@ -578,7 +588,7 @@
           <button type="button" class="seg" data-value="custom" aria-pressed="false">Eigene Kurve</button>
         </div>
       </div>
-      <p id="import-custom-help" class="import-help">Für weitere Referenzen, z. B. aus der Schweiz oder für Frühgeborene. WHO, Deutschland und Dänemark sind schon eingebaut.</p>
+      <p id="import-custom-help" hidden></p>
       <div id="import-dk-help" class="import-help">
         <p>Die dänischen Kurven (Tinggaard et al., Acta Paediatrica 2014) sind nicht frei verfügbar. Die LMS-Tabelle steht im Online-Supplement des Artikels (doi:10.1111/apa.12468), mit Bibliothekszugang abrufbar.</p>
       </div>
@@ -593,7 +603,6 @@
       <label class="field">
         <span class="field-label">oder Tabelle einfügen</span>
         <textarea name="text" rows="6" spellcheck="false" placeholder="measure,sex,age_months,L,M,S&#10;weight,male,0,0.35,3.50,0.14&#10;…"></textarea>
-        <span class="hint">Aus Excel oder Word kopieren und hier einfügen geht auch. Spalten: Messgröße, Geschlecht, Alter, L, M, S. Statt L, M, S gehen auch nu, mu, sigma. Gewicht in kg, Länge und Kopf in cm.</span>
       </label>
       <label class="field">
         <span class="field-label">Alter in</span>
@@ -624,7 +633,6 @@
           </select>
         </label>
       </div>
-      <p class="hint">Fehlt eine Spalte, gilt die Auswahl hier für die ganze Tabelle. Mehrere Importe mit demselben Ziel ergänzen sich, z. B. erst Gewicht, dann Länge.</p>
       <div class="field" id="import-existing-wrap" hidden>
         <span class="field-label">Schon importiert</span>
         <ul id="import-existing" class="admin-list"></ul>

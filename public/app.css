@@ -1411,3 +1411,19 @@ button, .seg, .chip, .tab, .tabbar, .segmented, .switch-row, .pause-toggle, .she
   .status.loading .status-next::before, .ptr.loading .ptr-ring { animation: none !important; }
   .seg:active, .tab:active, .med-take:active { transform: none; }
 }
+
+/* Wachstum: nur Zahlen und Befunde in der Fläche, Erklärungen hinter dem „i“ */
+.growth-now {
+  margin: 6px 8px 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.growth-list li.warn { margin: 0 -12px; padding: 8px 12px; border-top-color: transparent; border-radius: var(--r-xs); background: var(--tint-r); }
+.growth-list li.warn + li { border-top-color: transparent; }
+.growth-section .stats-info { margin-bottom: 4px; }
+.field .stats-head { margin-bottom: 6px; }
+.field .stats-head + .stats-info { margin: 0 0 10px; }
+.sheet-head h2 { margin: 0; }
+.sheet-head { margin-bottom: 12px; }
+.sheet-head + .stats-info { margin: -4px 0 14px; }

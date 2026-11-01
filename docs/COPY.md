@@ -96,3 +96,13 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Zeile unter Diagramm | leer, bis man tippt; dann z. B. „Di., 28. Okt.: 9 Mal gestillt, davon 2 Flasche · Ø Abstand 2 h 42 · 3 nachts · 6 Windeln“, „3–4 Uhr: 5 Mal in 14 Tagen“, „Gestern, 6–7 Uhr: 1 Mal“ |
 | Abstands-Klassen | „unter 1 h“ / „1 bis 2 h“ / „2 bis 3 h“ / „3 bis 4 h“ / „über 4 h“ |
 | Leer | „Noch nichts zu sehen. Nach ein paar Tagen zeigt sich hier, wann Bobo kommt.“ |
+
+### Wachstum, aufgeräumt (Ergänzung 6)
+
+| Stelle | Text |
+|---|---|
+| Ohne Geburtsdaten | „Noch keine Geburtsdaten“ · Button „Geburtsdaten eintragen“ |
+| Unter dem Diagramm | „4.200 g · P43 · z −0,2 · 1. Nov.“ · ohne Wert „Noch kein Wert“ |
+| Diagramm leer | „Geschlecht fehlt“ · „KiGGS-Kopfumfang erst ab 4 Monaten“ · „Keine Werte für Kopfumfang in diesem Zeitraum“ |
+| Zunahme | „3.240 g · −6,9 %“ / „Tiefster Wert · Tag 3“ · „Tag 10“ / „Geburtsgewicht wieder erreicht“ · „+650 g · P20“ / „0 bis 4 Wochen · WHO-Median 879 g“ · Befund „Mehr als 10 % unter Geburtsgewicht“ / „Mit Hebamme oder Sundhedsplejerske besprechen“ |
+| Zielgröße | „170 cm“ / „Tanner · 161,5 bis 178,5 cm“ · „170,3 cm · P55“ / „Hermanussen-Cole · 160,2 bis 180,4 cm“ · fehlend „Größen der Eltern fehlen“ / „Unter Geburtsdaten eintragen“ |
