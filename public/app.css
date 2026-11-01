@@ -967,6 +967,37 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .stats-body { transition: opacity 0.2s; }
 .stats-body.loading { opacity: 0.55; }
 .stats-section { margin-top: 22px; }
+.stats-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+.info-btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin: -10px -12px -10px 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.info-btn:active, .info-btn[aria-expanded="true"] { color: var(--text); }
+.stats-info {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-xs);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.8125rem;
+  line-height: 18px;
+  color: var(--text-2);
+}
 .stats-sub {
   margin: 6px 0 0;
   font-size: 0.8125rem;
@@ -979,8 +1010,9 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 10px;
 }
+.stats-section:first-child { margin-top: 18px; }
 .tile {
   display: flex;
   flex-direction: column;

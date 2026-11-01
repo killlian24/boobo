@@ -309,10 +309,13 @@ Regeln:
 - Kopfzeile: Balken-Icon neben dem Zahnrad; in der Karte „Letzte 24 Stunden“ der Link „Statistik“. Beide öffnen das
   Sheet „Bobos Takt“ (`#dlg-stats`).
 - Zeitraum 7 / 14 / 30 Tage als Segmentschalter, Wahl in localStorage `boobo.stats_days`.
-- Inhalt in dieser Reihenfolge: vier Kennzahlen (Pro Tag, Abstand, Nachts, Längste Pause) · Säulen pro Tag (heute
-  heller, „heute“ auf der Achse) · Säulen je Tagesstunde mit grauem Nachtband · Raster Tag × Stunde (dunkler = öfter,
-  heute: künftige Stunden leer) · Seitenverteilung (schmaler Segmentbalken plus Liste mit Zahlen) · Abstands-Klassen
-  (waagrechte Balken) · „Alle Tage als Tabelle“ (aufklappbar).
+- Inhalt in dieser Reihenfolge: „Auf einen Blick“ mit vier Kennzahlen (Pro Tag, Abstand, Nachts, Längste Pause) ·
+  Säulen pro Tag (heute heller, „heute“ auf der Achse) · Säulen je Tagesstunde mit grauem Nachtband · Raster Tag × Stunde
+  (dunkler = öfter, heute: künftige Stunden leer) · Seitenverteilung (schmaler Segmentbalken plus Liste mit Zahlen) ·
+  Abstands-Klassen (waagrechte Balken) · „Alle Tage als Tabelle“ (aufklappbar).
+- Keine Erklärtexte in der Fläche. Jeder Abschnitt hat rechts ein kleines „i“ (`.info-btn`, `aria-expanded`), das die
+  Erklärung bei Bedarf unter dem Titel einblendet. Sichtbar bleiben nur Befunde („Am häufigsten zwischen 15 und 16 Uhr.“,
+  „112 Mal in 14 Tagen, davon 12 Flasche“). Offene Erklärungen und die aufgeklappte Tabelle überleben ein Neuzeichnen.
 - Diagramme sind SVG ohne Bibliothek, eine Datenfarbe (`--ink-l`), Gitter als Haarlinie. Antippen eines Balkens oder
   Felds schreibt die Einzelheiten in die Zeile darunter; `<title>` liefert dasselbe als Tooltip, Tastatur über Tab/Enter.
 - Während eines Neuladens bleibt die alte Darstellung halbtransparent stehen (kein Flackern). Leer: „Noch nichts zu

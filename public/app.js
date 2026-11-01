@@ -1500,6 +1500,12 @@
     var body = $('#stats-body');
     var d = stats.data;
     var tableOpen = !!(body.querySelector('.stats-details') && body.querySelector('.stats-details').open);
+    // Offene Erklärungen beim Neuzeichnen (z. B. Drehen des Handys) offen lassen
+    openInfos = {};
+    $$('.stats-section', body).forEach(function (sec) {
+      var panel = $('.stats-info', sec);
+      if (panel && !panel.hidden) openInfos[$('.section-title', sec).textContent] = true;
+    });
     body.textContent = '';
     if (!d || !Array.isArray(d.days)) return;
     if (!d.totals || !d.totals.feeds) {
@@ -1516,10 +1522,34 @@
     body.appendChild(renderStatsTable(d, tableOpen));
   }
 
-  function statsSection(title, sub, children) {
-    var kids = [el('h3', { class: 'section-title', text: title })];
+  // Abschnitt mit Titel; `sub` ist ein Befund (bleibt sichtbar), `info` eine Erklärung hinter dem kleinen „i“
+  var infoSeq = 0;
+  var openInfos = {};
+  function statsSection(title, sub, info, children) {
+    var head = el('div', { class: 'stats-head' }, [el('h3', { class: 'section-title', text: title })]);
+    var kids = [head];
+    if (info) {
+      var id = 'stats-info-' + (++infoSeq);
+      var panel = el('p', { class: 'stats-info', id: id, text: info });
+      panel.hidden = !openInfos[title];
+      var btn = el('button', { class: 'info-btn', type: 'button', 'aria-label': 'Erklärung zu „' + title + '“', 'aria-expanded': panel.hidden ? 'false' : 'true', 'aria-controls': id }, [infoSvg()]);
+      btn.addEventListener('click', function () {
+        panel.hidden = !panel.hidden;
+        btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+      });
+      head.appendChild(btn);
+      kids.push(panel);
+    }
     if (sub) kids.push(el('p', { class: 'stats-sub', text: sub }));
     return el('section', { class: 'stats-section' }, kids.concat(children || []));
+  }
+
+  function infoSvg() {
+    var svg = svgEl('svg', { viewBox: '0 0 24 24', width: 20, height: 20, 'aria-hidden': 'true' });
+    svg.appendChild(svgEl('circle', { cx: 12, cy: 12, r: 9, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8 }));
+    svg.appendChild(svgEl('path', { d: 'M12 11v5.5', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' }));
+    svg.appendChild(svgEl('circle', { cx: 12, cy: 8, r: 1.2, fill: 'currentColor' }));
+    return svg;
   }
 
   function tile(label, value, sub) {
@@ -1535,16 +1565,19 @@
     var g = d.gaps || {};
     var now = new Date();
     var counted = isNum(t.days_counted) ? t.days_counted : 0;
-    var perDaySub = counted ? 'Ø über ' + plural(counted, 'vollen Tag', 'volle Tage') : 'noch kein voller Tag';
-    var gapSub = isNum(g.median_minutes) ? 'im Mittel · meist ' + formatDuration(g.median_minutes, 'gap') : 'zwischen zwei Mahlzeiten';
+    var perDaySub = counted ? plural(counted, 'voller Tag', 'volle Tage') : 'noch kein voller Tag';
+    var gapSub = isNum(g.median_minutes) ? 'meist ' + formatDuration(g.median_minutes, 'gap') : '';
     var longestAt = toDate(g.longest_at);
     var longestSub = longestAt ? 'bis ' + dayPrefix(longestAt, now) + fmtTime.format(longestAt) : '';
-    return el('div', { class: 'stats-tiles' }, [
+    var tiles = el('div', { class: 'stats-tiles' }, [
       tile('Pro Tag', fmt1(t.feeds_per_day), perDaySub),
       tile('Abstand', isNum(g.avg_minutes) ? formatDuration(g.avg_minutes, 'gap') : '–', gapSub),
-      tile('Nachts', fmt1(t.night_feeds_per_day), 'pro Nacht, 22–7 Uhr'),
+      tile('Nachts', fmt1(t.night_feeds_per_day), 'pro Nacht'),
       tile('Längste Pause', isNum(g.longest_minutes) ? formatDuration(g.longest_minutes, 'gap') : '–', longestSub)
     ]);
+    var info = 'Pro Tag und Nachts sind Mittelwerte über vollständige Tage, heute zählt noch nicht mit. ' +
+      'Nacht heißt 22 bis 7 Uhr. Abstand ist der Mittelwert von einer Mahlzeit zur nächsten, „meist“ der Median.';
+    return statsSection('Auf einen Blick', null, info, [tiles]);
   }
 
   // Detailzeile unter einem Diagramm: Antippen eines Balkens/Felds schreibt hier hinein
@@ -1609,7 +1642,7 @@
     if (n > 7 && labelAt[n - 2] && band < 30) delete labelAt[n - 2];
     var maxIdx = -1;
     days.forEach(function (day, i) { if (day.feeds === max && maxIdx < 0) maxIdx = i; });
-    var detail = detailLine('Tag antippen für Einzelheiten');
+    var detail = detailLine();
     days.forEach(function (day, i) {
       var cx = padL + band * i + band / 2;
       var x0 = cx - barW / 2;
@@ -1629,8 +1662,8 @@
       svg.appendChild(g);
     });
     svg.appendChild(svgEl('line', { class: 'axis', x1: padL, x2: width - padR, y1: y(0), y2: y(0) }));
-    var sub = 'Heller Balken: heute, noch nicht vorbei.';
-    return statsSection('Wie oft pro Tag', sub, [svg, detail]);
+    var info = 'Der helle Balken ist heute, der Tag ist noch nicht vorbei. Einen Tag antippen zeigt seine Zahlen.';
+    return statsSection('Wie oft pro Tag', null, info, [svg, detail]);
   }
 
   // Säulen pro Tagesstunde (alle Tage zusammen)
@@ -1655,7 +1688,7 @@
       svg.appendChild(svgEl('line', { class: 'grid', x1: padL, x2: width - padR, y1: y(v), y2: y(v) }));
       svg.appendChild(svgEl('text', { class: 'tick', x: padL - 6, y: y(v) + 4, 'text-anchor': 'end', text: v }));
     }
-    var detail = detailLine('Stunde antippen für Einzelheiten');
+    var detail = detailLine();
     hours.forEach(function (v, h) {
       var cx = padL + band * h + band / 2;
       var text = hourRangeText(h) + ': ' + v + ' Mal in ' + d.range_days + ' Tagen';
@@ -1671,8 +1704,10 @@
       svg.appendChild(svgEl('text', { class: 'tick', x: padL + band * h + band / 2, y: H - 6, 'text-anchor': 'middle', text: h === 0 ? '0 Uhr' : String(h) }));
     });
     svg.appendChild(svgEl('line', { class: 'axis', x1: padL, x2: width - padR, y1: y(0), y2: y(0) }));
-    var sub = peak >= 0 && max > 0 ? 'Am häufigsten zwischen ' + peak + ' und ' + ((peak + 1) % 24) + ' Uhr. Grau hinterlegt: die Nacht.' : '';
-    return statsSection('Zu welcher Zeit', sub, [svg, detail]);
+    var sub = peak >= 0 && max > 0 ? 'Am häufigsten zwischen ' + peak + ' und ' + ((peak + 1) % 24) + ' Uhr.' : '';
+    var info = 'Alle Tage des Zeitraums zusammengezählt, je Stunde. Grau hinterlegt ist die Nacht von 22 bis 7 Uhr. ' +
+      'Eine Stunde antippen zeigt ihre Zahl.';
+    return statsSection('Zu welcher Zeit', sub, info, [svg, detail]);
   }
 
   // Raster Tag × Stunde: jede Zelle eine Stunde, dunkler = öfter
@@ -1694,7 +1729,7 @@
     [0, 6, 12, 18].forEach(function (h) {
       svg.appendChild(svgEl('text', { class: 'tick', x: padL + colW * h + colW / 2, y: padT - 6, 'text-anchor': 'middle', text: h === 0 ? '0 Uhr' : String(h) }));
     });
-    var detail = detailLine('Feld antippen für Einzelheiten');
+    var detail = detailLine();
     days.forEach(function (day, r) {
       var yTop = padT + rowH * r;
       var date = dateFromKey(day.date);
@@ -1715,7 +1750,9 @@
         svg.appendChild(g);
       }
     });
-    return statsSection('Das Muster', 'Jede Zeile ein Tag, jedes Feld eine Stunde. Dunkel: da kam Bobo.', [svg, detail]);
+    var info = 'Jede Zeile ein Tag, jedes Feld eine Stunde. Rosa: da kam Bobo, kräftiger bei mehr als einem Mal. ' +
+      'Grau hinterlegt ist die Nacht. Ein Feld antippen zeigt, was da war.';
+    return statsSection('Das Muster', null, info, [svg, detail]);
   }
 
   // Seitenverteilung: schmaler Segmentbalken plus Liste mit Zahlen
@@ -1741,9 +1778,10 @@
     var sub = total + ' Mal in ' + d.range_days + ' Tagen' + (t.bottle ? ', davon ' + t.bottle + ' Flasche' : '');
     if (t.left && t.right) {
       var lr = Math.round((t.left / (t.left + t.right)) * 100);
-      sub += ' · Links ' + lr + ' %, Rechts ' + (100 - lr) + ' % (ohne Beide)';
+      sub += ' · Links ' + lr + ' %, Rechts ' + (100 - lr) + ' %';
     }
-    return statsSection('Welche Seite', sub, [bar, list]);
+    var info = 'Das Verhältnis Links zu Rechts zählt nur Mahlzeiten mit einer Seite, nicht Beide und nicht Flasche.';
+    return statsSection('Welche Seite', sub, info, [bar, list]);
   }
 
   // Abstände zwischen zwei Mahlzeiten: waagrechte Balken je Klasse
@@ -1762,7 +1800,8 @@
     });
     var g = d.gaps || {};
     var sub = isNum(g.count) && g.count ? plural(g.count, 'Abstand', 'Abstände') + (isNum(g.shortest_minutes) ? ' · kürzester ' + formatDuration(g.shortest_minutes, 'gap') : '') : '';
-    return statsSection('Wie lange dazwischen', sub, [rows]);
+    var info = 'Abstand von einer Mahlzeit zur nächsten, eingeteilt in Stunden. Genau 3 Stunden zählen zu „3 bis 4 h“.';
+    return statsSection('Wie lange dazwischen', sub, info, [rows]);
   }
 
   // Tabellenansicht: alle Zahlen noch einmal zum Nachlesen
@@ -1789,7 +1828,7 @@
     var details = el('details', { class: 'stats-details', open: !!open }, [
       el('summary', { text: 'Alle Tage als Tabelle' }),
       el('div', { class: 'table-wrap' }, [table]),
-      el('p', { class: 'hint', text: 'Windeln: nass / voll. Nachts: 22 bis 7 Uhr.' })
+      el('p', { class: 'hint', text: 'Windeln als nass / voll.' })
     ]);
     return el('section', { class: 'stats-section' }, [details]);
   }

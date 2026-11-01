@@ -54,3 +54,15 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
   Toast #2C2624 / #D9D2C8.
 - Neuer Token `--tint-n` (neutrale warme Fläche, z. B. Medikament „Geht jetzt“): hell #F5ECE1, dunkel #362E2A, Nacht #262019.
 - Neue Maße: Windel-Buttons 56 hoch, Medikament-Zeile ≥ 64 mit Button „Genommen“ 44 hoch, Chips 36 hoch (Radius 12).
+
+## Ergänzung 4: Statistik
+
+- Erklärtexte stehen nicht in der Fläche. Jeder Abschnitt trägt rechts ein kleines „i“ (20 px Icon, 44 px Tippfläche,
+  `--text-2`), das die Erklärung als Kasten (`--bg`, Haarlinie `--line`, Radius 12, 0.8125 rem) unter dem Titel ein- und
+  ausblendet. Sichtbar bleiben Zahlen und Befunde.
+- Kennzahl-Kacheln: Fläche `--bg` mit Haarlinie, Radius 16, Label 0.8125 rem, Wert 1.75 rem proportional (kein
+  `tabular-nums`), Unterzeile 0.75 rem.
+- Diagramme: eine Datenfarbe `--ink-l` (im Nachtmodus entsättigt), heute mit 45 % Deckung, Nachtband `--line` 45 %,
+  Gitter `--line` 1 px, Balken höchstens 24 px breit mit 4 px Rundung oben, Achsentext 11 px `--text-2`.
+  Raster Tag × Stunde: Felder Radius 2, leer `--line` 60 %, 1 Mal 50 %, ab 2 Mal 100 %.
+- Seitenverteilung ist die einzige Stelle mit Seitenfarben (Segmentbalken 8 px, Liste mit Kreis 24 px).
