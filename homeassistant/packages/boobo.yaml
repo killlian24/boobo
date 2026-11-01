@@ -540,19 +540,6 @@ automation:
                 title: "Boobo öffnen"
                 uri: "http://NAS-IP:8099"
 
-      # Zusätzlich tagsüber eine Ansage in der Küche. Nachts nur das Handy.
-      - if:
-          - condition: time
-            after: "08:00:00"
-            before: "21:00:00"
-        then:
-          - action: tts.cloud_say
-            data:
-              entity_id: media_player.nest_lautsprecher   # Entity-ID eures Nest-/Cast-Lautsprechers
-              language: de-DE
-              message: "Bobo hat bestimmt Hunger. Zuletzt {{ states('sensor.boobo_letzte_seite') }}, vor {{ states('sensor.boobo_minuten_seit_stillen') }} Minuten. Diesmal ist {{ states('sensor.boobo_vorschlag_seite') }} dran."
-            continue_on_error: true
-
       # Handy 2 – Block kopieren und `notify.mobile_app_<handy2>` eintragen:
       # - action: notify.mobile_app_handy2
       #   data:

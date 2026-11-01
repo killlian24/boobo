@@ -85,7 +85,8 @@ Skripte erscheinen bei Google als **Szenen** und werden mit „Hey Google, aktiv
 
 Ansagen: `script.boobo_ansage` und `script.boobo_mama_ansage` sprechen über `tts.cloud_say` auf dem Lautsprecher
 `media_player.nest_lautsprecher` (im Package anpassen; ohne Home Assistant Cloud z. B. `tts.google_translate_say`).
-Die Hunger-Erinnerung sagt zwischen 8 und 21 Uhr zusätzlich in der Küche Bescheid, nachts nur per Handy.
+Die Hunger-Erinnerung kommt nur aufs Handy; wer sie zusätzlich tagsüber vom Lautsprecher hören will, hängt in
+`automation boobo_erinnerung` eine `tts.cloud_say`-Aktion mit einer `condition: time` an.
 Der Doppelschutz gilt auch per Stimme: innerhalb von 10 Minuten wird nichts doppelt notiert.
 
 ## 1. NAS-IP eintragen
