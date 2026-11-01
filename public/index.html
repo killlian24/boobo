@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Boobo</title>
   <meta name="description" content="Boobo – minimaler Still-Tracker">
   <meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
@@ -51,9 +51,10 @@
       </button>
     </div>
   </header>
+  <div id="ptr" class="ptr" aria-live="polite"><span class="ptr-ring" aria-hidden="true"></span><span id="ptr-text"></span></div>
 
-  <main class="app">
-    <section id="status" class="status card" aria-live="polite">
+  <main class="app view" id="view-home">
+    <section id="status" class="status card loading" aria-live="polite" aria-busy="true">
       <div class="status-main">
         <div class="ring-wrap">
           <svg class="ring" viewBox="0 0 116 116" aria-hidden="true">
@@ -65,12 +66,12 @@
             </g>
           </svg>
           <div class="ring-center">
-            <div id="status-time" class="status-time">–:–</div>
+            <div id="status-time" class="status-time"></div>
             <div id="status-side" class="status-side"></div>
           </div>
         </div>
         <div class="status-text">
-          <div id="status-rel" class="status-rel">Lade …</div>
+          <div id="status-rel" class="status-rel"></div>
           <div id="status-next" class="status-next"></div>
         </div>
       </div>
@@ -125,9 +126,96 @@
 
     <section class="history" aria-label="Bisher">
       <h2 class="section-title">Bisher</h2>
-      <div id="history"></div>
+      <div id="history">
+        <div class="skel-list" aria-busy="true" aria-label="Lade">
+          <span class="skel skel-row"></span><span class="skel skel-row"></span><span class="skel skel-row"></span>
+        </div>
+      </div>
     </section>
   </main>
+
+  <main class="app view" id="view-growth" hidden aria-labelledby="growth-title">
+    <div class="growth-head">
+      <h2 id="growth-title" class="page-title">Wachstum</h2>
+      <p id="growth-age" class="page-sub"></p>
+    </div>
+
+    <div id="growth-skeleton" aria-busy="true" aria-label="Lade">
+      <div class="growth-actions"><span class="skel skel-btn"></span><span class="skel skel-btn"></span></div>
+      <div class="card growth-chart-card"><span class="skel skel-line"></span><span class="skel skel-chart"></span></div>
+    </div>
+
+    <section id="growth-setup" class="card growth-setup" hidden>
+      <p class="summary-line main">Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.</p>
+      <p class="summary-line">Geschlecht, Geburtstag, Maße bei Geburt und eure Größen. Alles lässt sich später ändern.</p>
+      <button type="button" class="btn primary link-btn growth-cta" id="btn-growth-setup">Geburtsdaten eintragen</button>
+    </section>
+
+    <div id="growth-content" hidden>
+      <div class="growth-actions">
+        <button type="button" class="btn primary" id="btn-growth-measure">Messung eintragen</button>
+        <button type="button" class="btn ghost" id="btn-growth-profile">Geburtsdaten</button>
+      </div>
+
+      <section class="card growth-chart-card">
+      <div class="field">
+        <span class="field-label" id="growth-ref-label">Kurven</span>
+        <div class="segmented neutral ref-seg" id="growth-ref-seg" role="radiogroup" aria-labelledby="growth-ref-label"></div>
+        <span class="hint" id="growth-ref-hint"></span>
+      </div>
+
+      <div class="segmented three neutral" id="growth-measure-seg" role="radiogroup" aria-label="Messgröße">
+        <button type="button" class="seg" data-value="weight" aria-pressed="true">Gewicht</button>
+        <button type="button" class="seg" data-value="length" aria-pressed="false">Länge</button>
+        <button type="button" class="seg" data-value="hc" aria-pressed="false">Kopf</button>
+      </div>
+
+      <div class="chart-wrap">
+        <div id="growth-chart" class="chart" role="img" aria-label="Wachstumskurve"></div>
+        <p id="growth-chart-note" class="hint"></p>
+      </div>
+      <div class="chips range-chips" id="growth-range" role="group" aria-label="Zeitraum">
+        <button type="button" class="chip" data-days="91" aria-pressed="false">3 Mon.</button>
+        <button type="button" class="chip" data-days="183" aria-pressed="false">6 Mon.</button>
+        <button type="button" class="chip" data-days="365" aria-pressed="false">1 Jahr</button>
+        <button type="button" class="chip" data-days="730" aria-pressed="false">2 Jahre</button>
+        <button type="button" class="chip" data-days="1826" aria-pressed="false">5 Jahre</button>
+      </div>
+
+      </section>
+
+      <section class="growth-section" id="growth-gains-wrap" hidden>
+        <h3 class="section-title">Zunahme</h3>
+        <p id="growth-early" class="growth-text" hidden></p>
+        <ul id="growth-velocity" class="growth-list"></ul>
+        <ul id="growth-gains" class="growth-list"></ul>
+      </section>
+
+      <section class="growth-section">
+        <h3 class="section-title">Messungen</h3>
+        <ul id="growth-measurements" class="growth-table"></ul>
+      </section>
+
+      <section class="growth-section" id="growth-target-wrap">
+        <h3 class="section-title">Zielgröße</h3>
+        <div id="growth-target" class="growth-text"></div>
+      </section>
+
+      <p id="growth-source" class="meta growth-source"></p>
+      <button type="button" class="text-link growth-import-link" id="btn-growth-import">Andere Kurve importieren</button>
+    </div>
+  </main>
+
+  <nav class="tabbar" aria-label="Bereiche">
+    <button type="button" class="tab" data-view="home" aria-current="page">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="8.5" cy="12" r="4.5" fill="currentColor"/><circle cx="16" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Stillen</span>
+    </button>
+    <button type="button" class="tab" data-view="growth">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 4v16h16M7 15c3-1 5-4 6.5-7.5M7 18.5c4-1 7.5-4 10-9"/></svg>
+      <span>Wachstum</span>
+    </button>
+  </nav>
 
   <div id="toast" class="toast" hidden role="status">
     <span class="toast-text"><span id="toast-text" class="toast-title"></span><span id="toast-sub" class="toast-sub" hidden></span></span>
@@ -229,6 +317,11 @@
         <input type="checkbox" role="switch" id="night-toggle" class="switch">
       </label>
 
+      <div class="field">
+        <span class="field-label">Wachstum</span>
+        <button type="button" id="btn-settings-profile" class="btn ghost link-btn">Geburtsdaten und Kurven</button>
+      </div>
+
       <div class="field" id="med-admin-wrap" hidden>
         <span class="field-label">Für Mama</span>
         <ul id="med-admin" class="admin-list"></ul>
@@ -240,6 +333,7 @@
         <div class="export-more">
           <a class="text-link" href="/api/export.csv?what=diapers" download="boobo-windeln.csv">Windeln als CSV</a>
           <a class="text-link" href="/api/export.csv?what=intakes" download="boobo-medikamente.csv">Medikamente als CSV</a>
+          <a class="text-link" href="/api/export.csv?what=measurements" download="boobo-wachstum.csv">Wachstum als CSV</a>
         </div>
       </div>
 
@@ -365,6 +459,185 @@
         <button type="submit" class="btn primary">Speichern</button>
       </div>
       <button type="button" class="btn danger-ghost full" id="btn-med-delete">Löschen</button>
+    </form>
+  </dialog>
+
+  <!-- Messung eintragen / bearbeiten -->
+  <dialog id="dlg-measure" class="sheet">
+    <form method="dialog" id="form-measure" novalidate>
+      <h2 id="measure-title">Messung</h2>
+      <label class="field">
+        <span class="field-label">Datum</span>
+        <input type="date" name="date" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Gewicht in Gramm</span>
+        <input type="text" name="m_weight" inputmode="decimal" placeholder="z. B. 4120" autocomplete="off">
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Länge in cm</span>
+          <input type="text" name="m_length" inputmode="decimal" placeholder="z. B. 54,5" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Kopfumfang in cm</span>
+          <input type="text" name="m_hc" inputmode="decimal" placeholder="z. B. 37" autocomplete="off">
+        </label>
+      </div>
+      <div class="field measure-source">
+        <span class="field-label" id="measure-source-label">Gemessen von</span>
+        <div class="segmented neutral source-seg" role="radiogroup" aria-labelledby="measure-source-label" data-name="source">
+          <button type="button" class="seg" data-value="nurse" aria-pressed="false">Sundheds&shy;plejerske</button>
+          <button type="button" class="seg" data-value="doctor" aria-pressed="false">Arzt</button>
+          <button type="button" class="seg" data-value="home" aria-pressed="false">Zuhause</button>
+          <button type="button" class="seg" data-value="hospital" aria-pressed="false">Klinik</button>
+        </div>
+      </div>
+      <label class="field">
+        <span class="field-label">Notiz (optional)</span>
+        <input type="text" name="note" maxlength="200" placeholder="z. B. nach dem Stillen, ohne Windel">
+      </label>
+      <p class="hint" id="measure-hint"></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+      <button type="button" class="btn danger-ghost full" id="btn-measure-delete">Löschen</button>
+    </form>
+  </dialog>
+
+  <!-- Geburtsdaten -->
+  <dialog id="dlg-profile" class="sheet">
+    <form method="dialog" id="form-profile" novalidate>
+      <h2>Geburtsdaten</h2>
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input type="text" name="name" maxlength="40" placeholder="Bobo" autocomplete="off">
+      </label>
+      <div class="field">
+        <span class="field-label" id="profile-sex-label">Geschlecht</span>
+        <div class="segmented two neutral" role="radiogroup" aria-labelledby="profile-sex-label" data-name="sex">
+          <button type="button" class="seg" data-value="female" aria-pressed="false">Mädchen</button>
+          <button type="button" class="seg" data-value="male" aria-pressed="false">Junge</button>
+        </div>
+        <span class="hint">Die Kurven sind für Mädchen und Jungen getrennt.</span>
+      </div>
+      <label class="field">
+        <span class="field-label">Geburtstag</span>
+        <input type="date" name="birth_date">
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Schwangerschaftswoche</span>
+          <input type="number" name="gestation_weeks" min="22" max="44" step="1" inputmode="numeric" placeholder="z. B. 40">
+        </label>
+        <label class="field">
+          <span class="field-label">plus Tage</span>
+          <input type="number" name="gestation_days" min="0" max="6" step="1" inputmode="numeric" placeholder="0 bis 6">
+        </label>
+      </div>
+      <p class="hint profile-hint">Vor 37+0 rechnet Boobo bis zum 2. Geburtstag mit korrigiertem Alter.</p>
+      <label class="field">
+        <span class="field-label">Geburtsgewicht in Gramm</span>
+        <input type="text" name="birth_weight" inputmode="decimal" placeholder="z. B. 3400" autocomplete="off">
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Länge in cm</span>
+          <input type="text" name="birth_length" inputmode="decimal" placeholder="z. B. 51" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Kopfumfang in cm</span>
+          <input type="text" name="birth_hc" inputmode="decimal" placeholder="z. B. 35" autocomplete="off">
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Größe Mama in cm</span>
+          <input type="text" name="mother_height" inputmode="decimal" placeholder="z. B. 168" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Größe Papa in cm</span>
+          <input type="text" name="father_height" inputmode="decimal" placeholder="z. B. 184" autocomplete="off">
+        </label>
+      </div>
+      <p class="hint profile-hint">Aus euren Größen berechnet Boobo die Zielgröße.</p>
+      <div class="field">
+        <span class="field-label" id="profile-ref-label">Kurven</span>
+        <div class="segmented neutral ref-seg" id="profile-ref-seg" role="radiogroup" aria-labelledby="profile-ref-label" data-name="ref"></div>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Referenzkurve importieren -->
+  <dialog id="dlg-import" class="sheet">
+    <form method="dialog" id="form-import" novalidate>
+      <h2>Kurve importieren</h2>
+      <div class="field">
+        <span class="field-label" id="import-target-label">Wofür?</span>
+        <div class="segmented two neutral" id="import-target" role="radiogroup" aria-labelledby="import-target-label" data-name="target">
+          <button type="button" class="seg" data-value="dk" aria-pressed="true">Dänemark 2014</button>
+          <button type="button" class="seg" data-value="custom" aria-pressed="false">Eigene Kurve</button>
+        </div>
+      </div>
+      <div id="import-dk-help" class="import-help">
+        <p>Die dänischen Kurven (Tinggaard et al., Acta Paediatrica 2014) sind nicht frei verfügbar. Die LMS-Tabelle steht im Online-Supplement des Artikels (doi:10.1111/apa.12468), mit Bibliothekszugang abrufbar.</p>
+      </div>
+      <label class="field" id="import-name-wrap" hidden>
+        <span class="field-label">Name</span>
+        <input type="text" name="name" maxlength="40" placeholder="z. B. Schweiz 2011" autocomplete="off">
+      </label>
+      <label class="field">
+        <span class="field-label">Datei (CSV oder JSON)</span>
+        <input type="file" name="file" accept=".csv,.txt,.tsv,.json,text/csv,text/plain,application/json" class="file-input">
+      </label>
+      <label class="field">
+        <span class="field-label">oder Tabelle einfügen</span>
+        <textarea name="text" rows="6" spellcheck="false" placeholder="measure,sex,age_months,L,M,S&#10;weight,male,0,0.35,3.50,0.14&#10;…"></textarea>
+        <span class="hint">Aus Excel oder Word kopieren und hier einfügen geht auch. Spalten: Messgröße, Geschlecht, Alter, L, M, S. Statt L, M, S gehen auch nu, mu, sigma. Gewicht in kg, Länge und Kopf in cm.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Alter in</span>
+        <select name="age_unit">
+          <option value="">automatisch aus der Kopfzeile</option>
+          <option value="days">Tagen</option>
+          <option value="weeks">Wochen</option>
+          <option value="months">Monaten</option>
+          <option value="years">Jahren</option>
+        </select>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Messgröße</span>
+          <select name="measure">
+            <option value="">aus Tabelle</option>
+            <option value="weight">Gewicht</option>
+            <option value="length">Länge</option>
+            <option value="hc">Kopfumfang</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Geschlecht</span>
+          <select name="sex">
+            <option value="">aus Tabelle</option>
+            <option value="female">Mädchen</option>
+            <option value="male">Jungen</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Fehlt eine Spalte, gilt die Auswahl hier für die ganze Tabelle. Mehrere Importe mit demselben Ziel ergänzen sich, z. B. erst Gewicht, dann Länge.</p>
+      <div class="field" id="import-existing-wrap" hidden>
+        <span class="field-label">Schon importiert</span>
+        <ul id="import-existing" class="admin-list"></ul>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Importieren</button>
+      </div>
     </form>
   </dialog>
 

@@ -693,7 +693,7 @@ describe('Migration from a round-1 database (feeds + settings only)', () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         .all()
         .map((r) => r.name);
-      assert.deepEqual(tables, ['diapers', 'feeds', 'med_intakes', 'medications', 'settings']);
+      assert.deepEqual(tables, ['diapers', 'feeds', 'growth_refs', 'measurements', 'med_intakes', 'medications', 'settings']);
       assert.equal(ctx.app.db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
       assert.equal(ctx.app.db.prepare("SELECT value FROM settings WHERE key = 'meds_seeded'").get().value, '1');
     } finally {

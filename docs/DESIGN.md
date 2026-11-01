@@ -55,7 +55,25 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
 - Neuer Token `--tint-n` (neutrale warme Fläche, z. B. Medikament „Geht jetzt“): hell #F5ECE1, dunkel #362E2A, Nacht #262019.
 - Neue Maße: Windel-Buttons 56 hoch, Medikament-Zeile ≥ 64 mit Button „Genommen“ 44 hoch, Chips 36 hoch (Radius 12).
 
-## Ergänzung 4: Statistik
+## Ergänzung 3: App-Gefühl
+
+- Tabs unten (60 hoch, Fläche `--surface`, Linie `--line`): „Stillen“ und „Wachstum“. Aktiver Tab Text `--text`,
+  Symbol `--ink-l`. Jeder Tab behält seine Scrollposition; der zuletzt offene Tab ist beim Start wieder offen
+  (localStorage `boobo.tab`, Adresse `#wachstum`). Wechsel mit 180 ms Einblenden.
+- Kopfzeile bleibt beim Scrollen stehen (sticky, Fläche `--bg`).
+- Kein Neuladen und kein Gummiband des Browsers (`overscroll-behavior-y: contain`). Eigene Geste: oben nach unten ziehen,
+  ab 64 px „Loslassen zum Aktualisieren“, dann Ring dreht, Daten neu holen, kein Seiten-Reload.
+- Sheets: Griff 36 × 5 (Radius 3, `--line`), Einfahren 280 ms, Ausfahren 200 ms, Abdunkeln blendet mit. Nach unten
+  wischen schließt (ab 30 % der Höhe, höchstens 140 px, oder schneller Wisch ab 40 px), sonst schnappt es zurück.
+  Escape und Tipp auf die Abdunklung fahren ebenfalls aus. Hinter offenem Sheet scrollt die Seite nicht.
+- Druckzustand für alle Tasten (iOS braucht dafür einen `touchstart`-Listener), kein Markieren und kein Callout auf
+  Bedienelementen, kein Doppeltipp-Zoom, Eingaben mindestens 16 px (sonst zoomt iOS).
+- Laden: Platzhalter-Flächen statt „Lade …“ (Statuskarte, Verlauf, Wachstum), dezent schimmernd.
+- Neue Version: Hinweis „Neue Version von Boobo.“ mit „Neu laden“, sobald der Service Worker aktualisiert ist;
+  beim Zurückkehren in die App prüft Boobo auf Updates.
+- `prefers-reduced-motion`: keine Bewegung, Sheets erscheinen und verschwinden sofort.
+
+## Ergänzung 5: Statistik
 
 - Erklärtexte stehen nicht in der Fläche. Jeder Abschnitt trägt rechts ein kleines „i“ (20 px Icon, 44 px Tippfläche,
   `--text-2`), das die Erklärung als Kasten (`--bg`, Haarlinie `--line`, Radius 12, 0.8125 rem) unter dem Titel ein- und

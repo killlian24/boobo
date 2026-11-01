@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.0.0';
+  var APP_VERSION = '1.2.0';
   var REFRESH_MS = 30000;
   var TICK_MS = 60000;
   var TOAST_MS = 10000;
@@ -203,7 +203,7 @@
     }).catch(function (err) {
       // Netzwerkfehler (TypeError) oder Serverfehler → Banner
       setOnline(false);
-      if (!state.state) renderStatus();
+      if (!state.state) { renderStatus(); renderHistory(); }
       console.warn('refresh failed', err);
     }).then(function () {
       refreshing = null;
@@ -281,12 +281,14 @@
     var nextEl = $('#status-next');
     var sugEl = $('#status-suggest');
 
-    box.classList.remove('overdue', 'warn', 'empty');
+    box.classList.remove('overdue', 'warn', 'empty', 'loading');
+    box.removeAttribute('aria-busy');
 
     if (!s) {
-      timeEl.textContent = '–:–';
+      timeEl.textContent = state.online ? '' : '–:–';
       sideEl.textContent = '';
-      relEl.textContent = state.online ? 'Lade …' : 'Keine Daten';
+      relEl.textContent = state.online ? '' : 'Keine Daten';
+      box.classList.toggle('loading', state.online);
       nextEl.textContent = '';
       sugEl.textContent = '';
       ring.style.strokeDashoffset = RING_LEN;
@@ -693,18 +695,50 @@
   // ---------- Dialoge ----------
 
   var dialogStack = [];
+  // Sheets: native <dialog> (Fokus, Escape, Top-Layer) mit Griff, Ein- und Ausfahren und Wegwischen nach unten.
+  var SHEET_OUT_MS = 200;
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+  }
   function openDialog(dlg) {
+    if (dlg._closing) finishClose(dlg);
     if (dlg.open) return;
+    dlg.scrollTop = 0;
+    dlg.classList.remove('shown');
     if (typeof dlg.showModal === 'function') dlg.showModal();
     else dlg.setAttribute('open', '');
+    // Nach dem Einfahren Animation abschalten, sonst startet sie nach Ziehen oder Zurückschnappen neu
+    if (reducedMotion()) dlg.classList.add('shown');
+    else setTimeout(function () { if (dlg.open && !dlg._closing) dlg.classList.add('shown'); }, 300);
     var i = dialogStack.indexOf(dlg);
     if (i >= 0) dialogStack.splice(i, 1);
     dialogStack.push(dlg);
   }
-  function closeDialog(dlg) {
-    if (!dlg.open) return;
-    if (typeof dlg.close === 'function') dlg.close();
-    else dlg.removeAttribute('open');
+  // fromDrag: das Sheet wurde schon ein Stück heruntergezogen und fährt von dort aus weiter
+  function closeDialog(dlg, fromDrag) {
+    if (!dlg.open || dlg._closing) return;
+    var i = dialogStack.indexOf(dlg);
+    if (i >= 0) dialogStack.splice(i, 1);
+    if (reducedMotion() || !dlg.classList.contains('sheet')) { finishClose(dlg); return; }
+    dlg._closing = true;
+    dlg.classList.remove('shown');
+    if (fromDrag) {
+      dlg.classList.add('snap', 'closing-drag');
+      dlg.style.transform = 'translateY(100%)';
+    } else {
+      dlg.classList.add('closing');
+    }
+    dlg._closeTimer = setTimeout(function () { finishClose(dlg); }, SHEET_OUT_MS);
+  }
+  function finishClose(dlg) {
+    clearTimeout(dlg._closeTimer);
+    dlg._closing = false;
+    dlg.classList.remove('closing', 'closing-drag', 'snap', 'dragging', 'shown');
+    dlg.style.transform = '';
+    if (dlg.open) {
+      if (typeof dlg.close === 'function') dlg.close();
+      else dlg.removeAttribute('open');
+    }
     onDialogClosed(dlg);
   }
   function onDialogClosed(dlg) {
@@ -717,6 +751,56 @@
       var host = dialogStack.length ? dialogStack[dialogStack.length - 1] : document.body;
       host.appendChild(t);
     }
+  }
+
+  // Nach unten wischen schließt: nur wenn der Inhalt ganz oben steht, erst ab 8 px, damit Tippen und Scrollen bleiben.
+  function initSheetDrag(dlg) {
+    var y0 = 0, t0 = 0, startTop = 0, dy = 0, dragging = false, tracking = false;
+    dlg.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1 || dlg._closing) { tracking = false; return; }
+      var tag = e.target && e.target.tagName;
+      tracking = tag !== 'TEXTAREA' && tag !== 'SELECT';
+      y0 = e.touches[0].clientY;
+      t0 = Date.now();
+      startTop = dlg.scrollTop;
+      dy = 0;
+      dragging = false;
+    }, { passive: true });
+    dlg.addEventListener('touchmove', function (e) {
+      if (!tracking) return;
+      dy = e.touches[0].clientY - y0;
+      if (!dragging) {
+        if (dy > 8 && startTop <= 0 && dlg.scrollTop <= 0) {
+          dragging = true;
+          dlg.classList.add('dragging');
+          var a = document.activeElement;
+          if (a && dlg.contains(a) && a.blur) a.blur();
+        } else if (Math.abs(dy) > 8) {
+          tracking = false;
+          return;
+        } else return;
+      }
+      e.preventDefault();
+      dlg.style.transform = 'translateY(' + Math.max(0, dy - 8) + 'px)';
+    }, { passive: false });
+    function end() {
+      if (!dragging) { tracking = false; return; }
+      dragging = false;
+      tracking = false;
+      var dist = Math.max(0, dy - 8);
+      var speed = dist / Math.max(1, Date.now() - t0);
+      dlg.classList.remove('dragging');
+      armSwallow(350); // der Klick nach dem Loslassen soll nichts auslösen
+      if (dist > Math.min(140, dlg.offsetHeight * 0.3) || (speed > 0.6 && dist > 40)) {
+        closeDialog(dlg, true);
+      } else {
+        dlg.classList.add('snap');
+        dlg.style.transform = '';
+        setTimeout(function () { dlg.classList.remove('snap'); }, SHEET_OUT_MS);
+      }
+    }
+    dlg.addEventListener('touchend', end);
+    dlg.addEventListener('touchcancel', end);
   }
 
   // Wiederverwendbare Rückfrage. opts: { title, text, yes, no, danger } → Promise<boolean>
@@ -755,6 +839,8 @@
   function initDialogs() {
     $$('dialog').forEach(function (dlg) {
       dlg.addEventListener('close', function () { onDialogClosed(dlg); });
+      // Escape fährt das Sheet aus, statt es hart zu schließen
+      dlg.addEventListener('cancel', function (e) { e.preventDefault(); closeDialog(dlg); });
       $$('[data-close]', dlg).forEach(function (b) {
         b.addEventListener('click', function () { closeDialog(dlg); });
       });
@@ -762,6 +848,13 @@
       dlg.addEventListener('click', function (e) {
         if (e.target === dlg) closeDialog(dlg);
       });
+      if (dlg.classList.contains('sheet')) {
+        var grip = document.createElement('div');
+        grip.className = 'sheet-grip';
+        grip.setAttribute('aria-hidden', 'true');
+        dlg.insertBefore(grip, dlg.firstChild);
+        initSheetDrag(dlg);
+      }
     });
     $$('.segmented').forEach(segInit);
   }
@@ -1380,6 +1473,744 @@
     });
   }
 
+  // ---------- Wachstum ----------
+
+  var MEASURE_NAMES = { weight: 'Gewicht', length: 'Länge', hc: 'Kopfumfang' };
+  var SOURCE_NAMES = { nurse: 'Sundhedsplejerske', doctor: 'Arzt', home: 'Zuhause', hospital: 'Klinik', birth: 'Geburt' };
+  var REF_SHORT = { who: 'WHO', de: 'Deutschland', dk: 'Dänemark' };
+  var MONTH = 30.4375;
+  var fmtInt = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
+  var fmtDec1 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 });
+  var fmtDec2 = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+  var fmtDay = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
+  var fmtDayYear = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+  var growthView = { measure: 'weight', range: null, ref: null };
+  state.growth = null;
+
+  function ymdDate(ymd) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  function todayYmd() { return dayKey(new Date()); }
+  function fmtYmd(ymd, withYear) {
+    var d = ymdDate(ymd);
+    if (!d) return '';
+    return (withYear || d.getFullYear() !== new Date().getFullYear() ? fmtDayYear : fmtDay).format(d);
+  }
+
+  // "4,1" → 4.1; leer → null; Unsinn → NaN
+  function parseDec(raw) {
+    var s = String(raw == null ? '' : raw).trim().replace(/\s/g, '').replace(',', '.');
+    if (s === '') return null;
+    if (!/^\d+(\.\d+)?$|^\.\d+$/.test(s)) return NaN;
+    return parseFloat(s);
+  }
+  // Gramm; kleine Zahlen als kg verstehen ("4,12" → 4120)
+  function parseGrams(raw) {
+    var v = parseDec(raw);
+    if (v === null || isNaN(v)) return v;
+    return Math.round(v < 30 ? v * 1000 : v);
+  }
+  function decInput(v) { return v == null ? '' : String(v).replace('.', ','); }
+
+  function fmtP(p) {
+    if (!isNum(p)) return '';
+    if (p < 1) return '< P1';
+    if (p > 99) return '> P99';
+    return 'P' + Math.round(p);
+  }
+  function fmtZ(z) {
+    if (!isNum(z)) return '';
+    return 'z ' + (z > 0 ? '+' : z < 0 ? '−' : '') + fmtDec1.format(Math.abs(z));
+  }
+  function fmtValue(measure, v) {
+    if (!isNum(v)) return '';
+    return measure === 'weight' ? fmtInt.format(v) + ' g' : fmtDec1.format(v) + ' cm';
+  }
+  function signed(n, unit) {
+    return (n > 0 ? '+' : n < 0 ? '−' : '±') + fmtInt.format(Math.abs(n)) + unit;
+  }
+
+  function ageText(days) {
+    if (!isNum(days)) return '';
+    if (days < 0) return 'noch ' + plural(-days, 'Tag', 'Tage') + ' bis zum errechneten Termin';
+    if (days < 14) return plural(days, 'Tag', 'Tage');
+    if (days < 91) {
+      var w = Math.floor(days / 7), d = days % 7;
+      return plural(w, 'Woche', 'Wochen') + (d ? ', ' + plural(d, 'Tag', 'Tage') : '');
+    }
+    if (days < 730) {
+      var mo = Math.floor(days / MONTH);
+      var wk = Math.floor((days - mo * MONTH) / 7);
+      return plural(mo, 'Monat', 'Monate') + (wk ? ', ' + plural(wk, 'Woche', 'Wochen') : '');
+    }
+    var y = Math.floor(days / 365.25);
+    var m2 = Math.floor((days - y * 365.25) / MONTH);
+    return plural(y, 'Jahr', 'Jahre') + (m2 ? ', ' + plural(m2, 'Monat', 'Monate') : '');
+  }
+
+  function velocityLabel(v) {
+    if (v.from_day === 0) return '0 bis 4 Wochen';
+    if (v.from_day === 28) return '4 Wochen bis 2 Monate';
+    var a = Math.round(v.from_day / MONTH), b = Math.round(v.to_day / MONTH);
+    return a + ' bis ' + b + ' Monate';
+  }
+
+  function refShort(id, refs) {
+    if (REF_SHORT[id]) return REF_SHORT[id];
+    var r = (refs || []).filter(function (x) { return x.id === id; })[0];
+    return r ? r.name : 'eigener Kurve';
+  }
+
+  function growthQuery() {
+    var q = [];
+    if (growthView.ref) q.push('ref=' + encodeURIComponent(growthView.ref));
+    if (growthView.range) q.push('range_days=' + growthView.range);
+    return '/api/growth' + (q.length ? '?' + q.join('&') : '');
+  }
+
+  function loadGrowth() {
+    return api('GET', growthQuery()).then(function (g) {
+      state.growth = g;
+      renderGrowthSheet();
+      return g;
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  // ---------- Ansichten (Tabs) ----------
+
+  var currentView = 'home';
+  var LS_TAB = 'boobo.tab';
+  var scrollMem = { home: 0, growth: 0 };
+  function showView(name, fromHash) {
+    if (name !== 'growth') name = 'home';
+    var changed = name !== currentView;
+    if (changed) scrollMem[currentView] = window.scrollY;
+    currentView = name;
+    lsSet(LS_TAB, name === 'growth' ? 'growth' : null);
+    $('#view-home').hidden = name !== 'home';
+    $('#view-growth').hidden = name !== 'growth';
+    $$('.tab').forEach(function (t) {
+      if (t.getAttribute('data-view') === name) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
+    });
+    if (!fromHash) {
+      var hash = name === 'growth' ? '#wachstum' : '';
+      if (location.hash !== hash) {
+        try { history.pushState(null, '', hash || location.pathname + location.search); } catch (e) { location.hash = hash; }
+      }
+    }
+    if (changed) {
+      // jede Ansicht behält ihre Scrollposition, wie bei Tabs in Apps
+      window.scrollTo(0, scrollMem[name] || 0);
+      var v = $(name === 'growth' ? '#view-growth' : '#view-home');
+      v.classList.remove('view-in');
+      void v.offsetWidth;
+      v.classList.add('view-in');
+    }
+    if (name === 'growth') loadGrowth();
+  }
+  function viewFromHash() { return location.hash === '#wachstum' ? 'growth' : 'home'; }
+
+  function renderGrowthSheet() {
+    var g = state.growth;
+    if (!g) return;
+    var p = g.profile || {};
+    $('#growth-title').textContent = p.name ? 'Wachstum · ' + p.name : 'Wachstum';
+    var ready = !!p.birth_date;
+    $('#growth-skeleton').hidden = true;
+    $('#growth-setup').hidden = ready;
+    $('#growth-content').hidden = !ready;
+    var age = '';
+    if (isNum(g.age_days)) {
+      age = ageText(g.age_days) + ' alt';
+      if (isNum(g.corrected_age_days)) age += ' · korrigiert ' + ageText(g.corrected_age_days);
+    }
+    if (!g.sex && ready) age += ' · Geschlecht fehlt noch';
+    $('#growth-age').textContent = age;
+    $('#growth-age').hidden = !age;
+
+    // Kurven-Auswahl
+    var seg = $('#growth-ref-seg');
+    seg.textContent = '';
+    g.refs.forEach(function (r) {
+      var b = el('button', { type: 'button', class: 'seg' + (r.available ? '' : ' unavailable'), 'data-value': r.id, text: refShort(r.id, g.refs) });
+      b.setAttribute('aria-pressed', g.ref && g.ref.id === r.id ? 'true' : 'false');
+      if (!r.available) b.setAttribute('aria-label', refShort(r.id) + ', noch nicht importiert');
+      seg.appendChild(b);
+    });
+    var hint = g.ref ? (g.ref.title || g.ref.name) + '. ' + (g.ref.description || '') : '';
+    if (g.ref_unavailable) hint = refShort(g.ref_unavailable, g.refs) + ' ist noch nicht importiert, deshalb WHO. ' + hint;
+    $('#growth-ref-hint').textContent = hint;
+
+    segSet($('#growth-measure-seg'), growthView.measure);
+    $$('#growth-range .chip').forEach(function (c) {
+      c.setAttribute('aria-pressed', Number(c.getAttribute('data-days')) === g.range_days ? 'true' : 'false');
+    });
+
+    renderChart($('#growth-chart'), g, growthView.measure);
+    renderGains(g);
+    renderTarget(g);
+    renderMeasurementList(g);
+    $('#growth-source').textContent = g.ref && g.ref.source ? 'Quelle: ' + g.ref.source : '';
+  }
+
+  // ---------- Diagramm (SVG) ----------
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag, attrs, text) {
+    var n = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function niceStep(span, target) {
+    var raw = span / target;
+    var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+    var steps = [1, 2, 2.5, 5, 10];
+    for (var i = 0; i < steps.length; i++) if (raw <= steps[i] * mag) return steps[i] * mag;
+    return 10 * mag;
+  }
+
+  function xTicks(range) {
+    var ticks = [];
+    var i, d;
+    if (range <= 100) {
+      for (i = 0; i * 14 <= range; i++) ticks.push([i * 14, i === 0 ? '0' : (i * 2) + ' W']);
+    } else if (range <= 200) {
+      for (i = 0; i * MONTH <= range + 1; i++) ticks.push([Math.round(i * MONTH), i === 0 ? '0' : i + ' M']);
+    } else if (range <= 400) {
+      for (i = 0; i * 2 * MONTH <= range + 1; i++) ticks.push([Math.round(i * 2 * MONTH), i === 0 ? '0' : (i * 2) + ' M']);
+    } else if (range <= 800) {
+      for (i = 0; i * 3 * MONTH <= range + 1; i++) ticks.push([Math.round(i * 3 * MONTH), i === 0 ? '0' : (i * 3) + ' M']);
+    } else {
+      for (i = 0; (d = i * 365.25 / 2) <= range + 1; i++) ticks.push([Math.round(d), i === 0 ? '0' : (i % 2 ? fmtDec1.format(i / 2) : String(i / 2)) + ' J']);
+    }
+    return ticks;
+  }
+
+  function renderChart(root, g, measure) {
+    root.textContent = '';
+    var note = $('#growth-chart-note');
+    note.textContent = '';
+    var c = g.curves && g.curves[measure];
+    var field = { weight: 'weight_g', length: 'length_cm', hc: 'hc_cm' }[measure];
+    if (!g.sex || !c) {
+      var msg = !g.sex
+        ? 'Für die Kurven braucht Boobo Geschlecht und Geburtstag.'
+        : 'Die Kurve ' + refShort(g.ref && g.ref.id, g.refs) + ' hat für ' + MEASURE_NAMES[measure] + ' in diesem Zeitraum keine Werte.';
+      if (g.sex && g.ref && g.ref.id === 'de' && measure === 'hc') msg = 'Die deutsche Kopfumfang-Kurve (KiGGS) beginnt erst mit 4 Monaten. Größeren Zeitraum wählen oder WHO nehmen.';
+      root.appendChild(el('p', { class: 'empty-hint chart-empty', text: msg }));
+      return;
+    }
+    var kg = measure === 'weight';
+    var scale = function (v) { return kg ? v / 1000 : v; };
+    var W = 340, H = 260, ml = 34, mr = 38, mt = 20, mb = 26;
+    var x0 = 0, x1 = g.range_days;
+    var pts = (g.measurements || []).filter(function (m) {
+      return isNum(m[field]) && isNum(m.plot_age_days) && m.plot_age_days >= 0 && m.plot_age_days <= x1;
+    }).map(function (m) { return { x: m.plot_age_days, y: scale(m[field]), m: m }; });
+
+    var lines = c.lines;
+    var lo = Infinity, hi = -Infinity;
+    function consider(v) { if (isNum(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+    lines[0].points.forEach(function (p) { consider(scale(p[1])); });
+    lines[lines.length - 1].points.forEach(function (p) { consider(scale(p[1])); });
+    pts.forEach(function (p) { consider(p.y); });
+    if (c.target) c.target.points.forEach(function (p) { consider(scale(p[1])); });
+    if (!isFinite(lo)) return;
+    var pad = (hi - lo) * 0.04;
+    lo -= pad; hi += pad;
+    var step = niceStep(hi - lo, 6);
+    lo = Math.floor(lo / step) * step;
+    hi = Math.ceil(hi / step) * step;
+
+    var X = function (d) { return ml + (d - x0) / (x1 - x0) * (W - ml - mr); };
+    var Y = function (v) { return mt + (hi - v) / (hi - lo) * (H - mt - mb); };
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, 'aria-hidden': 'true' });
+    var grid = svgEl('g', { class: 'grid' });
+    for (var v = lo; v <= hi + step / 2; v += step) {
+      grid.appendChild(svgEl('line', { x1: ml, x2: W - mr, y1: Y(v), y2: Y(v) }));
+      grid.appendChild(svgEl('text', { x: ml - 5, y: Y(v) + 3.5, 'text-anchor': 'end' }, step < 1 ? fmtDec1.format(v) : fmtInt.format(v)));
+    }
+    xTicks(x1).forEach(function (t) {
+      grid.appendChild(svgEl('line', { class: 'v', x1: X(t[0]), x2: X(t[0]), y1: mt, y2: H - mb }));
+      grid.appendChild(svgEl('text', { x: X(t[0]), y: H - mb + 15, 'text-anchor': t[0] === 0 ? 'start' : 'middle' }, t[1]));
+    });
+    grid.appendChild(svgEl('text', { x: ml - 5, y: 9, 'text-anchor': 'end', class: 'unit' }, kg ? 'kg' : 'cm'));
+    svg.appendChild(grid);
+
+    function pathOf(points) {
+      var d = '';
+      points.forEach(function (p, i) {
+        if (!isNum(p[1])) return;
+        d += (d ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(scale(p[1])).toFixed(1);
+      });
+      return d;
+    }
+    // Fläche zwischen äußerster unterer und oberer Linie
+    var outerLo = lines[0].points, outerHi = lines[lines.length - 1].points;
+    var band = pathOf(outerLo) + outerHi.slice().reverse().map(function (p) {
+      return 'L' + X(p[0]).toFixed(1) + ' ' + Y(scale(p[1])).toFixed(1);
+    }).join('') + 'Z';
+    svg.appendChild(svgEl('path', { class: 'band', d: band }));
+
+    var labelYs = [];
+    lines.forEach(function (line) {
+      svg.appendChild(svgEl('path', { class: 'pline' + (line.z === 0 ? ' median' : ''), d: pathOf(line.points) }));
+      var last = line.points[line.points.length - 1];
+      if (last && isNum(last[1])) labelYs.push({ y: Y(scale(last[1])), x: X(last[0]), label: line.label });
+    });
+    // Beschriftungen nicht übereinander
+    labelYs.sort(function (a, b) { return a.y - b.y; });
+    for (var i = 1; i < labelYs.length; i++) if (labelYs[i].y - labelYs[i - 1].y < 10) labelYs[i].y = labelYs[i - 1].y + 10;
+    labelYs.forEach(function (l) { svg.appendChild(svgEl('text', { class: 'plabel', x: l.x + 4, y: l.y + 3.5 }, l.label)); });
+
+    if (c.target && g.target && g.target.sds) {
+      svg.appendChild(svgEl('path', { class: 'target', d: pathOf(c.target.points) }));
+      var tl = c.target.points[Math.floor(c.target.points.length * 0.62)];
+      if (tl && isNum(tl[1])) svg.appendChild(svgEl('text', { class: 'tlabel', x: X(tl[0]), y: Y(scale(tl[1])) - 6, 'text-anchor': 'middle' }, 'Zielkanal'));
+    }
+
+    if (pts.length) {
+      pts.sort(function (a, b) { return a.x - b.x; });
+      if (pts.length > 1) {
+        svg.appendChild(svgEl('path', {
+          class: 'series',
+          d: pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1); }).join('')
+        }));
+      }
+      pts.forEach(function (p) {
+        svg.appendChild(svgEl('circle', { class: 'pt' + (p.m.id === 'birth' ? ' birth' : ''), cx: X(p.x).toFixed(1), cy: Y(p.y).toFixed(1), r: 3.6 }));
+      });
+    }
+    if (isNum(g.corrected_age_days) || isNum(g.age_days)) {
+      var now = isNum(g.corrected_age_days) ? g.corrected_age_days : g.age_days;
+      if (now >= 0 && now <= x1) svg.appendChild(svgEl('line', { class: 'now', x1: X(now), x2: X(now), y1: mt, y2: H - mb }));
+    }
+    root.appendChild(svg);
+
+    var latest = g.latest && g.latest[measure];
+    var parts = [];
+    if (latest && isNum(latest.value)) {
+      parts.push('Zuletzt ' + fmtValue(measure, latest.value) + (isNum(latest.p) ? ', ' + fmtP(latest.p) + ' (' + fmtZ(latest.z) + ').' : '.'));
+    } else {
+      parts.push('Noch kein ' + MEASURE_NAMES[measure] + ' eingetragen.');
+    }
+    if (g.correction_days > 0) parts.push('Punkte beim korrigierten Alter.');
+    if (c.target) parts.push('Gestrichelt: Zielkanal aus euren Größen.');
+    note.textContent = parts.join(' ');
+    root.setAttribute('aria-label', MEASURE_NAMES[measure] + ' nach ' + refShort(g.ref.id, g.refs) + '. ' + parts[0]);
+  }
+
+  // ---------- Zunahme, Zielgröße, Messungen ----------
+
+  function renderGains(g) {
+    var wrap = $('#growth-gains-wrap');
+    var early = $('#growth-early');
+    var vel = $('#growth-velocity');
+    var list = $('#growth-gains');
+    vel.textContent = '';
+    list.textContent = '';
+    var e = g.early;
+    var any = false;
+    if (e && isNum(e.lowest_g)) {
+      var t = 'Tiefster Wert ' + fmtInt.format(e.lowest_g) + ' g am ' + e.lowest_day + '. Tag, ' + fmtDec1.format(e.loss_pct) + ' % unter dem Geburtsgewicht. ';
+      if (isNum(e.regained_day)) t += 'Geburtsgewicht am ' + e.regained_day + '. Tag wieder erreicht.';
+      else t += 'Geburtsgewicht noch nicht wieder erreicht.';
+      var warn = e.loss_pct > 10 || (!isNum(e.regained_day) && isNum(g.age_days) && g.age_days > 14);
+      if (e.loss_pct > 10) t += ' Mehr als 10 %: bitte mit Hebamme oder Sundhedsplejerske besprechen.';
+      else if (warn) t += ' Meist ist es nach 2 Wochen wieder erreicht: beim nächsten Besuch ansprechen.';
+      early.textContent = t;
+      early.classList.toggle('warn', warn);
+      early.hidden = false;
+      any = true;
+    } else {
+      early.hidden = true;
+    }
+    (g.velocity || []).forEach(function (v) {
+      vel.appendChild(el('li', null, [
+        el('span', { class: 'gl-main', text: velocityLabel(v) + ': ' + signed(v.increment_g, ' g') }),
+        el('span', { class: 'gl-sub', text: fmtP(v.p) + ' · Median ' + fmtInt.format(v.median_g) + ' g (WHO)' })
+      ]));
+      any = true;
+    });
+    (g.gains || []).slice().reverse().slice(0, 8).forEach(function (x) {
+      list.appendChild(el('li', null, [
+        el('span', { class: 'gl-main', text: signed(x.g_per_week, ' g') + ' pro Woche' }),
+        el('span', { class: 'gl-sub', text: fmtYmd(x.from) + ' bis ' + fmtYmd(x.to) + ' · ' + plural(x.days, 'Tag', 'Tage') + ' · ' + signed(x.diff_g, ' g') })
+      ]));
+      any = true;
+    });
+    wrap.hidden = !any;
+  }
+
+  function renderTarget(g) {
+    var box = $('#growth-target');
+    box.textContent = '';
+    var t = g.target;
+    if (!t) {
+      box.appendChild(el('p', { text: g.sex ? 'Tragt eure Größen in den Geburtsdaten ein, dann rechnet Boobo die Zielgröße.' : 'Für die Zielgröße braucht Boobo Geschlecht und eure Größen.' }));
+      return;
+    }
+    box.appendChild(el('p', { class: 'target-main', text: 'Tanner: ' + fmtDec1.format(t.tanner.cm) + ' cm' }));
+    box.appendChild(el('p', { class: 'hint', text: 'Bereich ' + fmtDec1.format(t.tanner.min_cm) + ' bis ' + fmtDec1.format(t.tanner.max_cm) + ' cm. Mittel eurer Größen ' + (g.sex === 'male' ? 'plus' : 'minus') + ' 6,5 cm, Bereich ± 8,5 cm.' }));
+    if (t.sds) {
+      box.appendChild(el('p', { class: 'target-main', text: 'Hermanussen und Cole: ' + fmtDec1.format(t.sds.cm) + ' cm · ' + fmtP(t.sds.p) }));
+      box.appendChild(el('p', { class: 'hint', text: 'Bereich ' + fmtDec1.format(t.sds.min_cm) + ' bis ' + fmtDec1.format(t.sds.max_cm) + ' cm. Mama ' + fmtZ(t.sds.mother_sds) + ', Papa ' + fmtZ(t.sds.father_sds) + ', Ziel 0,72 × Mittelwert = ' + fmtZ(t.sds.sds) + ', Bereich ± 1,6 SD, bezogen auf Erwachsene mit ' + t.sds.adult_age_years + ' Jahren (' + refShort(g.ref.id, g.refs) + ').' }));
+    } else {
+      box.appendChild(el('p', { class: 'hint', text: 'Diese Kurve reicht nicht bis ins Erwachsenenalter, deshalb nur Tanner.' }));
+    }
+  }
+
+  function renderMeasurementList(g) {
+    var list = $('#growth-measurements');
+    list.textContent = '';
+    var items = (g.measurements || []).slice().reverse();
+    if (!items.length) {
+      list.appendChild(el('li', { class: 'empty-hint', text: 'Noch nichts gemessen. Morgen kommt die Sundhedsplejerske.' }));
+      return;
+    }
+    items.forEach(function (m) {
+      var vals = [];
+      ['weight', 'length', 'hc'].forEach(function (k) {
+        var f = { weight: 'weight_g', length: 'length_cm', hc: 'hc_cm' }[k];
+        if (!isNum(m[f])) return;
+        var s = m.scores && m.scores[k];
+        vals.push(el('span', { class: 'mv' }, [
+          el('span', { class: 'mv-val', text: fmtValue(k, m[f]) }),
+          s && isNum(s.p) ? el('span', { class: 'mv-p', text: fmtP(s.p) }) : null
+        ]));
+      });
+      var head = (m.id === 'birth' ? 'Geburt · ' : '') + fmtYmd(m.date, true) + (isNum(m.age_days) && m.id !== 'birth' ? ' · ' + ageText(m.age_days) : '');
+      var src = m.id === 'birth' ? '' : (SOURCE_NAMES[m.source] || '');
+      var row = el('button', { type: 'button', class: 'm-row', 'aria-label': head + ' bearbeiten' }, [
+        el('span', { class: 'm-head' }, [el('span', { text: head }), src ? el('span', { class: 'm-src', text: src }) : null]),
+        el('span', { class: 'm-vals' }, vals),
+        m.note ? el('span', { class: 'm-note', text: m.note }) : null
+      ]);
+      row.addEventListener('click', function () {
+        if (m.id === 'birth') openProfile(); else openMeasure(m);
+      });
+      list.appendChild(el('li', null, [row]));
+    });
+  }
+
+  // ---------- Messung eintragen ----------
+
+  var editingMeasure = null;
+  function openMeasure(m) {
+    editingMeasure = m || null;
+    var f = $('#form-measure').elements;
+    $('#measure-title').textContent = m ? 'Messung bearbeiten' : 'Messung eintragen';
+    f.date.value = m ? m.date : todayYmd();
+    f.date.max = todayYmd();
+    var birth = state.growth && state.growth.profile && state.growth.profile.birth_date;
+    if (birth) f.date.min = birth; else f.date.removeAttribute('min');
+    f.m_weight.value = m && isNum(m.weight_g) ? String(m.weight_g) : '';
+    f.m_length.value = m ? decInput(m.length_cm) : '';
+    f.m_hc.value = m ? decInput(m.hc_cm) : '';
+    f.note.value = m ? (m.note || '') : '';
+    segSet($('.source-seg', $('#form-measure')), m ? (m.source || '') : 'nurse');
+    $('#btn-measure-delete').hidden = !m;
+    $('#measure-hint').textContent = 'Alles leer lassen, was nicht gemessen wurde.';
+    openDialog($('#dlg-measure'));
+  }
+
+  function afterGrowthChange() {
+    var jobs = [refresh()];
+    if (currentView === 'growth') jobs.push(loadGrowth());
+    return Promise.all(jobs);
+  }
+
+  function submitMeasure(e) {
+    e.preventDefault();
+    var form = $('#form-measure');
+    var f = form.elements;
+    var w = parseGrams(f.m_weight.value);
+    var l = parseDec(f.m_length.value);
+    var h = parseDec(f.m_hc.value);
+    if (!f.date.value) { showToast('Bitte ein Datum wählen.', { error: true, duration: 4000 }); return; }
+    if ([w, l, h].some(function (v) { return v !== null && isNaN(v); })) {
+      showToast('Bitte nur Zahlen eintragen, z. B. 4120 oder 54,5.', { error: true, duration: 5000 }); return;
+    }
+    if (w === null && l === null && h === null) {
+      showToast('Mindestens Gewicht, Länge oder Kopfumfang eintragen.', { error: true, duration: 5000 }); return;
+    }
+    if (w !== null && (w < 300 || w > 30000)) { showToast('Gewicht bitte in Gramm, z. B. 4120.', { error: true, duration: 5000 }); return; }
+    if (l !== null && (l < 25 || l > 130)) { showToast('Länge bitte in cm zwischen 25 und 130.', { error: true, duration: 5000 }); return; }
+    if (h !== null && (h < 18 || h > 60)) { showToast('Kopfumfang bitte in cm zwischen 18 und 60.', { error: true, duration: 5000 }); return; }
+    var body = {
+      date: f.date.value, weight_g: w, length_cm: l, hc_cm: h,
+      source: segGet($('.source-seg', form)) || null, note: f.note.value.trim() || null
+    };
+    var submit = $('button[type=submit]', form);
+    submit.disabled = true;
+    var req = editingMeasure
+      ? api('PATCH', '/api/growth/measurements/' + editingMeasure.id, body)
+      : api('POST', '/api/growth/measurements', body);
+    var isNew = !editingMeasure;
+    req.then(function (res) {
+      closeDialog($('#dlg-measure'));
+      var m = res && res.measurement;
+      return afterGrowthChange().then(function () {
+        var what = w !== null ? fmtInt.format(w) + ' g' : l !== null ? fmtDec1.format(l) + ' cm' : fmtDec1.format(h) + ' cm Kopf';
+        showToast(isNew ? what + ', notiert.' : 'Gespeichert.', {
+          sub: isNew ? 'Groß geworden, Bobo.' : null,
+          duration: isNew ? TOAST_MS : 3000,
+          action: isNew && m ? function () { undoDelete('/api/growth/measurements/' + m.id, afterGrowthChange); } : null
+        });
+      });
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    }).then(function () { submit.disabled = false; });
+  }
+
+  function deleteMeasure() {
+    var m = editingMeasure;
+    if (!m) return;
+    askConfirm({ title: 'Messung löschen?', text: fmtYmd(m.date, true), yes: 'Ja, löschen', no: 'Behalten', danger: true }).then(function (ok) {
+      if (!ok) return;
+      return api('DELETE', '/api/growth/measurements/' + m.id).then(function () {
+        closeDialog($('#dlg-measure'));
+        showToast('Gelöscht.', { duration: 3000 });
+        return afterGrowthChange();
+      });
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  // ---------- Geburtsdaten ----------
+
+  function openProfile() {
+    var load = state.growth ? Promise.resolve(state.growth) : api('GET', '/api/growth').then(function (g) { state.growth = g; return g; });
+    load.then(function (g) {
+      var p = g.profile || {};
+      var form = $('#form-profile');
+      var f = form.elements;
+      f.name.value = p.name || '';
+      segSet($('[data-name="sex"]', form), p.sex || '');
+      f.birth_date.value = p.birth_date || '';
+      f.birth_date.max = todayYmd();
+      f.gestation_weeks.value = isNum(p.gestation_weeks) ? String(p.gestation_weeks) : '';
+      f.gestation_days.value = isNum(p.gestation_days) ? String(p.gestation_days) : '';
+      f.birth_weight.value = isNum(p.birth_weight_g) ? String(p.birth_weight_g) : '';
+      f.birth_length.value = decInput(p.birth_length_cm);
+      f.birth_hc.value = decInput(p.birth_hc_cm);
+      f.mother_height.value = decInput(p.mother_height_cm);
+      f.father_height.value = decInput(p.father_height_cm);
+      var seg = $('#profile-ref-seg');
+      seg.textContent = '';
+      var refs = g.refs.filter(function (r) { return r.available; });
+      refs.forEach(function (r) {
+        seg.appendChild(el('button', { type: 'button', class: 'seg', 'data-value': r.id, 'aria-pressed': 'false', text: refShort(r.id, g.refs) }));
+      });
+      segSet(seg, p.ref && refs.some(function (r) { return r.id === p.ref; }) ? p.ref : 'who');
+      openDialog($('#dlg-profile'));
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  function submitProfile(e) {
+    e.preventDefault();
+    var form = $('#form-profile');
+    var f = form.elements;
+    var intOrNull = function (raw) { var v = parseDec(raw); return v === null ? null : (isNaN(v) ? NaN : Math.round(v)); };
+    var body = {
+      name: f.name.value.trim() || null,
+      sex: segGet($('[data-name="sex"]', form)) || null,
+      birth_date: f.birth_date.value || null,
+      gestation_weeks: intOrNull(f.gestation_weeks.value),
+      gestation_days: intOrNull(f.gestation_days.value),
+      birth_weight_g: parseGrams(f.birth_weight.value),
+      birth_length_cm: parseDec(f.birth_length.value),
+      birth_hc_cm: parseDec(f.birth_hc.value),
+      mother_height_cm: parseDec(f.mother_height.value),
+      father_height_cm: parseDec(f.father_height.value),
+      ref: segGet($('#profile-ref-seg')) || 'who'
+    };
+    if (Object.keys(body).some(function (k) { return typeof body[k] === 'number' && isNaN(body[k]); })) {
+      showToast('Bitte nur Zahlen eintragen, z. B. 3400 oder 51,5.', { error: true, duration: 5000 }); return;
+    }
+    if (body.gestation_days !== null && body.gestation_weeks === null) body.gestation_days = null;
+    var submit = $('button[type=submit]', form);
+    submit.disabled = true;
+    api('PUT', '/api/growth/profile', body).then(function () {
+      closeDialog($('#dlg-profile'));
+      growthView.ref = null;
+      showToast('Geburtsdaten gespeichert.', { duration: 3000 });
+      return afterGrowthChange();
+    }).catch(function (err) {
+      showToast(profileError(err), { error: true, duration: 6000 });
+    }).then(function () { submit.disabled = false; });
+  }
+
+  function profileError(err) {
+    var msg = err && err.message ? err.message : '';
+    var map = {
+      birth_date: 'Der Geburtstag darf nicht in der Zukunft liegen.',
+      gestation_weeks: 'Schwangerschaftswoche bitte zwischen 22 und 44.',
+      gestation_days: 'Tage bitte zwischen 0 und 6.',
+      birth_weight_g: 'Geburtsgewicht bitte in Gramm, zwischen 300 und 7000.',
+      birth_length_cm: 'Geburtslänge bitte in cm, zwischen 25 und 65.',
+      birth_hc_cm: 'Kopfumfang bei Geburt bitte in cm, zwischen 18 und 45.',
+      mother_height_cm: 'Größe Mama bitte in cm, zwischen 120 und 230.',
+      father_height_cm: 'Größe Papa bitte in cm, zwischen 120 und 230.'
+    };
+    for (var k in map) if (msg.indexOf(k) === 0) return map[k];
+    return errorText(err);
+  }
+
+  // ---------- Kurve importieren ----------
+
+  function openImport(target) {
+    var form = $('#form-import');
+    form.reset();
+    segSet($('#import-target'), target === 'custom' ? 'custom' : 'dk');
+    updateImportTarget();
+    renderImportedRefs();
+    openDialog($('#dlg-import'));
+  }
+
+  function updateImportTarget() {
+    var custom = segGet($('#import-target')) === 'custom';
+    $('#import-name-wrap').hidden = !custom;
+    $('#import-dk-help').hidden = custom;
+  }
+
+  function renderImportedRefs() {
+    var refs = (state.growth && state.growth.refs || []).filter(function (r) { return !r.builtin && r.available; });
+    var list = $('#import-existing');
+    list.textContent = '';
+    $('#import-existing-wrap').hidden = !refs.length;
+    refs.forEach(function (r) {
+      var del = el('button', { type: 'button', class: 'btn danger-ghost', text: 'Löschen', 'aria-label': r.name + ' löschen' });
+      del.addEventListener('click', function () { deleteRef(r); });
+      list.appendChild(el('li', { class: 'admin-row' }, [
+        el('span', { class: 'admin-main' }, [
+          el('span', { class: 'admin-name', text: r.name }),
+          el('span', { class: 'admin-sub', text: r.measures.map(function (m) { return MEASURE_NAMES[m]; }).join(', ') + (r.has_adult_height ? ' · mit Erwachsenengröße' : '') })
+        ]),
+        del
+      ]));
+    });
+  }
+
+  function readFileText(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result || '')); };
+      r.onerror = function () { reject(new Error('Datei nicht lesbar')); };
+      r.readAsText(file);
+    });
+  }
+
+  function submitImport(e) {
+    e.preventDefault();
+    var form = $('#form-import');
+    var f = form.elements;
+    var target = segGet($('#import-target'));
+    var file = f.file.files && f.file.files[0];
+    var getText = file ? readFileText(file) : Promise.resolve(f.text.value);
+    var submit = $('button[type=submit]', form);
+    submit.disabled = true;
+    getText.then(function (text) {
+      text = String(text || '').trim();
+      if (!text) throw new Error('Bitte eine Datei wählen oder die Tabelle einfügen.');
+      var body = target === 'dk' ? { id: 'dk' } : { name: f.name.value.trim() || 'Eigene Kurve' };
+      if (text.charAt(0) === '{') {
+        try { body.data = JSON.parse(text); } catch (err) { throw new Error('Die JSON-Datei ist nicht lesbar.'); }
+      } else {
+        body.csv = text;
+        if (f.age_unit.value) body.age_unit = f.age_unit.value;
+        if (f.measure.value) body.measure = f.measure.value;
+        if (f.sex.value) body.sex = f.sex.value;
+      }
+      return api('POST', '/api/growth/refs', body);
+    }).then(function (res) {
+      var r = res && res.ref;
+      closeDialog($('#dlg-import'));
+      if (r) growthView.ref = r.id;
+      showToast((r ? r.name : 'Kurve') + ' importiert.', {
+        sub: r ? r.measures.map(function (m) { return MEASURE_NAMES[m]; }).join(', ') : null, duration: 5000
+      });
+      return afterGrowthChange();
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 8000 });
+    }).then(function () { submit.disabled = false; });
+  }
+
+  function deleteRef(r) {
+    askConfirm({ title: r.name + ' löschen?', text: 'Die Messungen bleiben, nur die Kurve verschwindet.', yes: 'Ja, löschen', no: 'Behalten', danger: true }).then(function (ok) {
+      if (!ok) return;
+      return api('DELETE', '/api/growth/refs/' + encodeURIComponent(r.id)).then(function () {
+        if (growthView.ref === r.id) growthView.ref = null;
+        showToast('Gelöscht.', { duration: 3000 });
+        return afterGrowthChange().then(renderImportedRefs);
+      });
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  function initGrowth() {
+    $('#btn-growth-setup').addEventListener('click', openProfile);
+    $$('.tab').forEach(function (t) {
+      t.addEventListener('click', function () { showView(t.getAttribute('data-view')); });
+    });
+    window.addEventListener('popstate', function () { showView(viewFromHash(), true); });
+    window.addEventListener('hashchange', function () { showView(viewFromHash(), true); });
+    // Start: Adresse (#wachstum) vor dem zuletzt offenen Tab
+    var startView = location.hash ? viewFromHash() : (lsGet(LS_TAB) === 'growth' ? 'growth' : 'home');
+    if (startView === 'growth') {
+      if (location.hash !== '#wachstum') { try { history.replaceState(null, '', '#wachstum'); } catch (e) { /* egal */ } }
+      showView('growth', true);
+    }
+    $('#btn-growth-measure').addEventListener('click', function () { openMeasure(null); });
+    $('#btn-growth-profile').addEventListener('click', openProfile);
+    $('#btn-settings-profile').addEventListener('click', function () {
+      closeDialog($('#dlg-settings'));
+      if (currentView !== 'growth') showView('growth');
+      openProfile();
+    });
+    $('#btn-growth-import').addEventListener('click', function () { openImport('dk'); });
+    $('#form-measure').addEventListener('submit', submitMeasure);
+    $('#btn-measure-delete').addEventListener('click', deleteMeasure);
+    $('#form-profile').addEventListener('submit', submitProfile);
+    $('#form-import').addEventListener('submit', submitImport);
+    $('#import-target').addEventListener('click', function () { setTimeout(updateImportTarget, 0); });
+    $('#growth-ref-seg').addEventListener('click', function (e) {
+      var b = e.target.closest('.seg');
+      if (!b) return;
+      var id = b.getAttribute('data-value');
+      if (b.classList.contains('unavailable')) {
+        renderGrowthSheet();
+        openImport(id === 'dk' ? 'dk' : 'custom');
+        return;
+      }
+      growthView.ref = id;
+      loadGrowth();
+    });
+    $('#growth-measure-seg').addEventListener('click', function (e) {
+      var b = e.target.closest('.seg');
+      if (!b) return;
+      growthView.measure = b.getAttribute('data-value');
+      if (state.growth) renderChart($('#growth-chart'), state.growth, growthView.measure);
+    });
+    $('#growth-range').addEventListener('click', function (e) {
+      var c = e.target.closest('.chip');
+      if (!c) return;
+      growthView.range = Number(c.getAttribute('data-days'));
+      loadGrowth();
+    });
+  }
+
   // ---------- Statistik („Bobos Takt“) ----------
   // Daten kommen fertig aggregiert von GET /api/stats?days=N (docs/API.md, Erweiterung 4).
   // Diagramme sind schlichtes SVG: eine Farbe (--ink-l) für Mengen, Seitenfarben nur bei der Seitenverteilung.
@@ -1941,6 +2772,76 @@
     body.appendChild(mk('p', 'hint', 'Die alte Verknüpfung könnt ihr löschen. Der Hinweis zum Chrome-Schalter von früher gilt nicht mehr.'));
   }
 
+  // ---------- Ziehen zum Aktualisieren ----------
+  // Der Browser darf die Seite nicht mehr neu laden (overscroll-behavior in app.css); stattdessen holt Boobo die Daten neu.
+
+  var PULL_AT = 64;
+  function initPull() {
+    var ptr = $('#ptr');
+    var label = $('#ptr-text');
+    var y0 = null, dist = 0, busy = false;
+    function set(h, text, cls) {
+      ptr.style.height = h + 'px';
+      ptr.className = 'ptr' + (cls ? ' ' + cls : '');
+      label.textContent = text || '';
+    }
+    document.addEventListener('touchstart', function (e) {
+      if (busy || dialogStack.length || e.touches.length !== 1 || window.scrollY > 0) { y0 = null; return; }
+      if (e.target.closest && e.target.closest('.chart, input, textarea, select')) { y0 = null; return; }
+      y0 = e.touches[0].clientY;
+      dist = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (y0 === null) return;
+      var dy = e.touches[0].clientY - y0;
+      if (dy <= 0 || window.scrollY > 0) { if (dist) set(0); dist = 0; if (dy < -8) y0 = null; return; }
+      dist = Math.min(dy * 0.5, 96);
+      set(dist, dist >= PULL_AT ? 'Loslassen zum Aktualisieren' : 'Zum Aktualisieren ziehen', dist >= PULL_AT ? 'ready' : 'pulling');
+    }, { passive: true });
+    function end() {
+      if (y0 === null) return;
+      y0 = null;
+      if (dist < PULL_AT) { set(0); dist = 0; return; }
+      busy = true;
+      vibrate(10);
+      set(44, 'Aktualisiere …', 'loading');
+      var jobs = [refresh()];
+      if (currentView === 'growth') jobs.push(loadGrowth());
+      Promise.all(jobs).catch(function () { /* Banner zeigt Fehler */ }).then(function () {
+        busy = false;
+        dist = 0;
+        set(0);
+      });
+    }
+    document.addEventListener('touchend', end, { passive: true });
+    document.addEventListener('touchcancel', end, { passive: true });
+  }
+
+  // ---------- Neue Version ----------
+
+  function initServiceWorker() {
+    if (!(window.isSecureContext && 'serviceWorker' in navigator)) return;
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('/sw.js').then(function (reg) {
+      reg.addEventListener('updatefound', function () {
+        var w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', function () {
+          if (w.state === 'activated' && hadController) {
+            showToast('Neue Version von Boobo.', {
+              action: function () { location.reload(); }, actionLabel: 'Neu laden', duration: 30 * 60000
+            });
+          }
+        });
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') reg.update().catch(function () { /* offline */ });
+      });
+    }).catch(function (err) {
+      console.warn('SW registration failed', err);
+    });
+  }
+
   // ---------- Init ----------
 
   function init() {
@@ -1949,6 +2850,10 @@
     initConfirm();
     initChips();
     initClickSwallow();
+    initGrowth();
+    initPull();
+    // iOS Safari zeigt den Druckzustand (:active) nur, wenn es irgendeinen touchstart-Listener gibt
+    document.addEventListener('touchstart', function () {}, { passive: true });
     initStats();
 
     $$('.feed-btn').forEach(function (b) {
@@ -2005,11 +2910,7 @@
     window.addEventListener('online', refresh);
     window.addEventListener('offline', function () { setOnline(false); });
 
-    if (window.isSecureContext && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function (err) {
-        console.warn('SW registration failed', err);
-      });
-    }
+    initServiceWorker();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

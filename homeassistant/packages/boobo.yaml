@@ -107,6 +107,34 @@ rest:
         availability: "{{ value_json.summary_24h is defined }}"
         value_template: "{{ value_json.summary_24h.diapers_dirty | int(0) }}"
 
+      # Wachstum (Erweiterung 4): letzte Messung und Perzentile der gewählten Kurve
+      - name: "Boobo Gewicht"
+        unique_id: boobo_gewicht
+        icon: mdi:scale-bathroom
+        unit_of_measurement: "g"
+        state_class: measurement
+        availability: "{{ value_json.growth is defined and value_json.growth is not none and value_json.growth.weight_g is not none }}"
+        value_template: "{{ value_json.growth.weight_g }}"
+        json_attributes_path: "$.growth"
+        json_attributes:
+          - ref
+          - weight_date
+          - weight_percentile
+          - length_cm
+          - length_percentile
+          - hc_cm
+          - hc_percentile
+          - gain_g_per_week
+          - age_days
+
+      - name: "Boobo Gewicht Perzentile"
+        unique_id: boobo_gewicht_perzentile
+        icon: mdi:chart-bell-curve-cumulative
+        unit_of_measurement: "P"
+        state_class: measurement
+        availability: "{{ value_json.growth is defined and value_json.growth is not none and value_json.growth.weight_percentile is not none }}"
+        value_template: "{{ value_json.growth.weight_percentile | round(0) }}"
+
 template:
   - binary_sensor:
       - name: "Boobo Bobo hat Hunger"

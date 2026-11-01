@@ -67,7 +67,23 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Export | „Windeln als CSV“ · „Medikamente als CSV“ |
 | Startbildschirm-Hilfe | Buttons „Zertifikat laden“ und „Boobo verschlüsselt öffnen“ (kein Kopieren mehr nötig) |
 
-## Erweiterung 4: Statistik
+## Erweiterung 4: Wachstum
+
+| Stelle | Text |
+|---|---|
+| Tabs | „Stillen“ / „Wachstum“ |
+| Seite Titel | „Wachstum · Bobo“ / „4 Wochen, 2 Tage alt“ · Buttons „Messung eintragen“ / „Geburtsdaten“ |
+| Seite leer | „Geburtsdaten eintragen, dann rechnet Boobo die Perzentilen.“ / „Geschlecht, Geburtstag, Maße bei Geburt und eure Größen. Alles lässt sich später ändern.“ · Button „Geburtsdaten eintragen“ |
+| Messung Toast | „4.200 g, notiert.“ zweite Zeile „Groß geworden, Bobo.“ |
+| Messung Dialog | „Messung eintragen“ / „Messung bearbeiten“ · „Gewicht in Gramm“, „Länge in cm“, „Kopfumfang in cm“, „Gemessen von“: Sundhedsplejerske / Arzt / Zuhause / Klinik · Hinweis „Alles leer lassen, was nicht gemessen wurde.“ |
+| Messungen leer | „Noch nichts gemessen. Morgen kommt die Sundhedsplejerske.“ |
+| Gewichtsverlust | „Tiefster Wert 3.240 g am 3. Tag, 6,9 % unter dem Geburtsgewicht. Geburtsgewicht am 10. Tag wieder erreicht.“ · über 10 %: „Mehr als 10 %: bitte mit Hebamme oder Sundhedsplejerske besprechen.“ · nach Tag 14 nicht erreicht: „Meist ist es nach 2 Wochen wieder erreicht: beim nächsten Besuch ansprechen.“ |
+| Zunahme | „+238 g pro Woche“ / „20. Okt. bis 30. Okt. · 10 Tage · +340 g“ · WHO: „0 bis 4 Wochen: +650 g“ / „P20 · Median 879 g (WHO)“ |
+| Zielgröße | „Tanner: 170 cm“ · „Hermanussen und Cole: 167,6 cm · P75“ · ohne Größen: „Tragt eure Größen in den Geburtsdaten ein, dann rechnet Boobo die Zielgröße.“ |
+| Kurve fehlt | „Die deutsche Kopfumfang-Kurve (KiGGS) beginnt erst mit 4 Monaten. Größeren Zeitraum wählen oder WHO nehmen.“ |
+| Import | „Kurve importieren“ · „Dänemark 2014“ / „Eigene Kurve“ · Toast „Dänemark importiert.“ + Messgrößen |
+
+## Erweiterung 5: Statistik
 
 | Stelle | Text |
 |---|---|

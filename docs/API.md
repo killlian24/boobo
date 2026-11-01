@@ -252,7 +252,86 @@ eine eigene kleine CA mit. Der http-Port 8099 bleibt unverändert (Home Assistan
   - standalone: Abschnitt ausgeblendet. `https.enabled === false`: Hinweis auf README.
 - Der Chrome-Flag-Weg entfällt aus der Anleitung.
 
-# Erweiterung 4 (2026-11-01): Statistik („Bobos Takt“)
+---
+
+# Erweiterung 4: Wachstum
+
+Rechenmodul `lib/growth.js` (reine Funktionen), Referenzdaten `growth/who.json` und `growth/de.json`
+(erzeugt mit `tools/build-growth-refs.py`, Quellen im README).
+
+## Datenmodell
+- `settings.growth_profile` (JSON): `name`, `sex` (`male` \| `female`), `birth_date` (`YYYY-MM-DD`),
+  `gestation_weeks` (22..44), `gestation_days` (0..6), `birth_weight_g` (300..7000), `birth_length_cm` (25..65),
+  `birth_hc_cm` (18..45), `mother_height_cm`, `father_height_cm` (120..230), `ref` (Kennung der gewählten Kurve).
+  Alles optional, `null` löscht.
+- Tabelle `measurements`: `id`, `date` (`YYYY-MM-DD`, Ortszeit), `weight_g` INTEGER (300..30000), `length_cm` REAL
+  (25..130), `hc_cm` REAL (18..60), `source` (`nurse` \| `doctor` \| `home` \| `hospital` \| null), `note`,
+  `created_at`, `updated_at`. Mindestens ein Messwert. cm auf 0,1 gerundet.
+- Tabelle `growth_refs`: importierte Kurven (`id` TEXT PK, `data` JSON). Eingebaut: `who`, `de`. `dk` ist ein
+  Platzhalter (`available: false`), bis eine Kurve mit der Kennung `dk` importiert ist.
+
+## Rechnung
+- Alter in Tagen = `date` − `birth_date`. Geburt vor 37+0: korrigiertes Alter (Alter − (280 − Gestationstage)) bis
+  730 Tage chronologisch; Kurvenpunkte und Perzentilen nutzen dann das korrigierte Alter.
+- LMS linear zwischen Tabellenzeilen interpoliert; z = ((x/M)^L − 1)/(L·S), bei |z| > 3 und L ≠ 1 WHO-Regel
+  (lineare Fortsetzung über den Abstand der 2- und 3-SD-Linie). Perzentile = Φ(z) × 100.
+- Die Geburtsdaten zählen als erste Messung (`id: "birth"`).
+- `gains`: aufeinanderfolgende Gewichte, `g_per_day`, `g_per_week`.
+- `early`: tiefstes Gewicht in den ersten 21 Tagen unter Geburtsgewicht, `loss_pct`, erster Tag mit Gewicht ≥
+  Geburtsgewicht danach (`regained_day`).
+- `velocity` (nur WHO): Zunahme in den WHO-Intervallen (0–4 Wochen, 4 Wochen–2 Monate, dann monatlich bis 12 Monate).
+  Gewicht am Intervallende exakt, linear zwischen Messungen mit ≤ 14 Tagen Abstand oder nächste Messung ≤ 3 Tage.
+  z = (((Zunahme + δ)/M)^L − 1)/(L·S) mit δ aus der WHO-Tabelle.
+- `target`: Tanner (Elternmittel ± 6,5 cm, Bereich ± 8,5 cm) und, wenn die Kurve eine Erwachsenengröße hat,
+  Hermanussen-Cole (0,72 × mittlerer Eltern-SDS, Bereich ± 1,6 SDS). `curves.length.target` zeichnet den Zielkanal.
+
+## Endpunkte
+### `GET /api/growth?ref=<id>&range_days=<28..1826>`
+→ `200 { profile, ref, ref_requested, ref_unavailable, refs, today, sex, age_days, corrected_age_days,
+correction_days, range_days, measurements, latest, gains, early, velocity, target, curves, lines }`.
+`ref` fehlt → `profile.ref` → `who`. Unbekannte oder nicht importierte Kurve → WHO und `ref_unavailable`.
+`range_days` fehlt → kleinster Bereich aus 91/183/365/730/1096/1826, der alle Messungen und das heutige Alter plus 21 Tage
+abdeckt. `measurements[]`: Messwerte plus `age_days`, `plot_age_days`, `scores.{weight,length,hc} = { z, p, dz }`
+(`dz` = Änderung zum vorigen Wert derselben Größe). `curves.<measure>.lines[] = { z, label, points: [[Tag, Wert]] }`
+(Gewicht in g, sonst cm).
+
+### `GET /api/growth/profile` → `{ profile }`; `PUT`/`PATCH /api/growth/profile`
+Nur mitgeschickte Felder werden geändert. `ref` muss eine verfügbare Kurve sein. Geburtstag nicht in der Zukunft.
+
+### `GET`/`POST /api/growth/measurements`, `GET`/`PATCH`/`DELETE /api/growth/measurements/:id`
+`POST` → `201 { measurement }`. `PATCH` mit mindestens einem Feld; leerer Messwert-Satz → 400.
+
+### `GET /api/growth/refs` → `{ refs: [{ id, name, title, kind, description, source, builtin, available, measures,
+max_age_days, has_velocity, has_adult_height }] }`
+### `POST /api/growth/refs` (Body bis 4 MB)
+`{ id?: "dk" | "<a-z0-9->", name?, csv?: "<Text>", data?: <Referenz-JSON>, age_unit?: days|weeks|months|years,
+measure?: weight|length|hc, sex?: male|female, replace?: false }` → `201 { ref }`.
+CSV: Spalten Messgröße, Geschlecht, Alter (Kopfzeile bestimmt die Einheit: `age_days`, `age_weeks`, `age_months`,
+`age_years`, `alter`, `alder_mdr` …), `L`/`nu`, `M`/`mu`, `S`/`sigma`. Trenner Komma, Semikolon oder Tab; bei
+Semikolon Dezimalkomma. `measure`/`sex` im Body gelten für Zeilen ohne diese Spalten. Gewicht in kg (Werte > 100 bei
+Alter 0 werden als Gramm erkannt). Gleiche Kennung ergänzt die vorhandene Kurve (`replace: true` ersetzt).
+Ohne `id` → `eigene-1`, `eigene-2` … `who`/`de` → 400. Reicht die Längenkurve bis ≥ 18 Jahre, dient der letzte Wert
+als Erwachsenengröße für die Zielgröße.
+### `GET /api/growth/refs/:id` → `{ ref }` (vollständig); `DELETE /api/growth/refs/:id` → 204 (eingebaute → 400).
+Ist die gelöschte Kurve im Profil gewählt, wird `profile.ref` auf `null` gesetzt.
+
+### `GET /api/state` zusätzlich
+`growth: null` (ohne Geburtstag) oder `{ ref, age_days, corrected_age_days, weight_g, weight_date, weight_percentile,
+length_cm, length_percentile, hc_cm, hc_percentile, gain_g_per_week }`.
+
+### `GET /api/export.csv?what=measurements` → `boobo-wachstum.csv` (`id,date,weight_g,length_cm,hc_cm,source,note`).
+
+## Frontend
+- Leiste unten mit zwei Tabs: „Stillen“ (bisherige Startseite, unverändert) und „Wachstum“ (eigene Seite, `#wachstum`,
+  Zurück-Taste des Handys wechselt zurück). Die Startseite bleibt fürs nächtliche Eintragen kurz.
+- Seite „Wachstum“: Titel mit Name und Alter, Buttons „Messung eintragen“ und „Geburtsdaten“. Ohne Geburtstag nur eine
+  Karte „Geburtsdaten eintragen“. Sonst Karte mit Kurvenwahl (WHO, Deutschland, Dänemark, eigene; nicht importierte
+  gestrichelt, Tipp öffnet den Import), Gewicht/Länge/Kopf, SVG-Diagramm (Perzentilen-Linien, Fläche zwischen den
+  äußersten Linien, Messpunkte, Linie für heute, gestrichelter Zielkanal) und Zeitraum 3 Monate bis 5 Jahre.
+  Darunter Zunahme, Messungen, Zielgröße, Quelle und „Andere Kurve importieren“.
+- Dialoge „Messung“, „Geburtsdaten“ (auch über Einstellungen), „Kurve importieren“ (Datei oder eingefügte Tabelle).
+
+# Erweiterung 5 (2026-11-01): Statistik („Bobos Takt“)
 
 Eine Seite, auf der man nachsehen kann, wie oft Bobo kommt und ob sich ein Muster zeigt. Die Aggregation
 läuft im Server (Zeitzone `TZ`, Standard `Europe/Berlin`), das Frontend zeichnet nur.

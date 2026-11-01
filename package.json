@@ -1,6 +1,6 @@
 {
   "name": "boobo",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Minimaler Still-Tracker für zwei Eltern – PWA, Node.js, SQLite, Docker",
   "type": "module",
   "private": true,

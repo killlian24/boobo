@@ -26,7 +26,11 @@ ohne Cloud, ohne Abhängigkeiten.
 - Dunkles, nachttaugliches Design, als PWA auf den Home-Bildschirm legbar
 - Einstellbares Intervall (Standard 3 h), CSV-Export
 - JSON-API für Home Assistant inkl. fertiger Sensoren, Erinnerungs-Automation und Notieren per Taster/Fernbedienung
-- Node.js 24 + SQLite (`node:sqlite`), **keine npm-Pakete**, eine Datei `server.js`
+- Wachstum: Geburtsdaten und Messungen (Gewicht, Länge, Kopfumfang) eintragen, Perzentilen nach WHO 2006,
+  deutscher Referenz (Kromeyer-Hauschild, KiGGS) oder dänischer Referenz 2014 (Import), Kurven mit Zielkanal,
+  Zunahme pro Woche, WHO-Zunahme pro Monat, Gewichtsverlust nach der Geburt, Zielgröße (Tanner und
+  Hermanussen-Cole), korrigiertes Alter bei Frühgeburt. Eigene Referenzkurven als CSV oder JSON importierbar
+- Node.js 24 + SQLite (`node:sqlite`), **keine npm-Pakete**, `server.js` plus `lib/growth.js`
 
 ## Installation über Portainer (empfohlen)
 
@@ -179,7 +183,13 @@ beschrieben. Kurzüberblick:
 | `GET` | `/api/med-intakes` | Einnahmen lesen |
 | `PATCH`/`DELETE` | `/api/med-intakes/:id` | Einnahme ändern (Uhrzeit nachkorrigieren) / löschen |
 | `GET`/`PUT` | `/api/settings` | Intervall lesen / setzen |
-| `GET` | `/api/export.csv` | CSV-Export (`?what=diapers` oder `?what=intakes` für Windeln bzw. Medikamente) |
+| `GET` | `/api/growth` | Wachstum: Profil, Messungen mit Perzentilen, Kurven, Zunahme, Zielgröße (`?ref=who\|de\|dk`, `range_days`) |
+| `GET`/`PUT` | `/api/growth/profile` | Geburtsdaten, Elterngrößen, gewählte Kurve |
+| `GET`/`POST` | `/api/growth/measurements` | Messungen lesen / eintragen |
+| `PATCH`/`DELETE` | `/api/growth/measurements/:id` | Messung ändern / löschen |
+| `GET`/`POST` | `/api/growth/refs` | Referenzkurven lesen / importieren (CSV oder JSON) |
+| `DELETE` | `/api/growth/refs/:id` | Importierte Kurve löschen |
+| `GET` | `/api/export.csv` | CSV-Export (`?what=diapers`, `?what=intakes`, `?what=measurements`) |
 | `GET` | `/api/stats?days=14` | Statistik: pro Tag, je Tagesstunde, Abstände, Seiten (1..90 Tage, Ortszeit) |
 
 Neu in `GET /api/state`: `summary_24h` (Tagesbilanz), `medications` und `medications_due`. `POST /api/feeds` und
@@ -187,6 +197,27 @@ Neu in `GET /api/state`: `summary_24h` (Tagesbilanz), `medications` und `medicat
 10 Minuten entfernt (`FEED_DUPLICATE_MINUTES`), antwortet der Server bei `ask` mit `409`, bei `skip` mit
 `200 { "skipped": true, "existing": … }`, bei `force` speichert er trotzdem. Details in
 [`docs/API.md`](docs/API.md) („Erweiterung 2“).
+
+## Wachstumskurven: Quellen
+
+Die Referenzdaten liegen als JSON in `growth/` und werden mit `tools/build-growth-refs.py` aus den Originaltabellen
+erzeugt (Anleitung im Skript):
+
+- **WHO** (`growth/who.json`): WHO Child Growth Standards 2006, LMS-Werte pro Lebenstag bis 5 Jahre für Gewicht,
+  Länge/Größe und Kopfumfang, aus dem offiziellen WHO-Paket `anthro`. Dazu die WHO-Zunahme-Standards 2009
+  (1-Monats-Intervalle bis 12 Monate) und die WHO-Referenz 2007 mit 19 Jahren für die Zielgröße.
+- **Deutschland** (`growth/de.json`): Kromeyer-Hauschild et al. 2001 für Gewicht und Länge (das ist die Referenz im
+  gelben Heft), Kopfumfang aus KiGGS 2003 bis 2006 (Robert Koch-Institut, erst ab 4 Monaten). LMS-Tabellen aus dem
+  R-Paket `childsds`.
+- **Dänemark**: Tinggaard et al., Acta Paediatrica 2014 (doi:10.1111/apa.12468). Die LMS-Werte stehen nur im
+  Online-Supplement des Artikels und sind nicht frei weiterverteilbar. Deshalb einmal in der App importieren:
+  Wachstum → Kurven → „Dänemark“ (oder „Kurve importieren“). Akzeptiert CSV mit den Spalten Messgröße, Geschlecht,
+  Alter, L, M, S (auch `nu`, `mu`, `sigma`; Komma oder Semikolon, Dezimalkomma; Kopfzeilen deutsch, dänisch oder
+  englisch). Fehlen Messgröße oder Geschlecht als Spalte, wählt man sie im Dialog. Mehrere Importe ergänzen sich.
+
+Die Zielgröße rechnet Boobo zweifach: nach Tanner (Mittel der Elterngrößen ± 6,5 cm, Bereich ± 8,5 cm) und nach
+Hermanussen & Cole 2003 (Ziel-SDS = 0,72 × mittlerer Eltern-SDS, Bereich ± 1,6 SDS, bezogen auf die
+Erwachsenengröße der gewählten Referenz). Boobo ersetzt keine Vorsorgeuntersuchung.
 
 ## Lizenz
 
