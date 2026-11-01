@@ -322,7 +322,7 @@ length_cm, length_percentile, hc_cm, hc_percentile, gain_g_per_week }`.
 ### `GET /api/export.csv?what=measurements` → `boobo-wachstum.csv` (`id,date,weight_g,length_cm,hc_cm,source,note`).
 
 ## Frontend
-- Leiste unten mit zwei Tabs: „Stillen“ (bisherige Startseite, unverändert) und „Wachstum“ (eigene Seite, `#wachstum`,
+- Leiste unten mit Tabs: „Stillen“ (bisherige Startseite, unverändert), „Wachstum“ (eigene Seite, `#wachstum`,
   Zurück-Taste des Handys wechselt zurück). Die Startseite bleibt fürs nächtliche Eintragen kurz.
 - Seite „Wachstum“: Titel mit Name und Alter, Buttons „Messung eintragen“ und „Geburtsdaten“. Ohne Geburtstag nur eine
   Karte „Geburtsdaten eintragen“. Sonst Karte mit Kurvenwahl (WHO, Deutschland, Dänemark, eigene; nicht importierte
@@ -385,8 +385,10 @@ Regeln:
 - Fehler: `days` außerhalb 1..90 oder keine Ganzzahl → `400`; andere Methoden → `405`.
 
 ## Frontend (public/)
-- Kopfzeile: Balken-Icon neben dem Zahnrad; in der Karte „Letzte 24 Stunden“ der Link „Statistik“. Beide öffnen das
-  Sheet „Bobos Takt“ (`#dlg-stats`).
+- Dritter Tab „Statistik“ in der Leiste unten (eigene Seite `#view-stats`, Adresse `#statistik`, zuletzt offener Tab
+  in localStorage `boobo.tab` wie bei Wachstum). Der Link „Statistik“ in der Karte „Letzte 24 Stunden“ wechselt dorthin.
+  Seitentitel „Bobos Takt“. Beim Öffnen und beim Ziehen zum Aktualisieren wird neu geladen; beim ersten Laden
+  Platzhalter-Flächen statt Text.
 - Zeitraum 7 / 14 / 30 Tage als Segmentschalter, Wahl in localStorage `boobo.stats_days`.
 - Inhalt in dieser Reihenfolge: „Auf einen Blick“ mit vier Kennzahlen (Pro Tag, Abstand, Nachts, Längste Pause) ·
   Säulen pro Tag (heute heller, „heute“ auf der Achse) · Säulen je Tagesstunde mit grauem Nachtband · Raster Tag × Stunde

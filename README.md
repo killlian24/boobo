@@ -16,7 +16,7 @@ ohne Cloud, ohne Abhängigkeiten.
   Seiten-Button öffnet Nachtragen direkt mit dieser Seite. Einträge ändern und löschen
 - Windeln: „Nass“ und „Voll“ mit einem Tipp, im Verlauf zwischen den Mahlzeiten
 - Tagesbilanz „Letzte 24 Stunden“: wie oft gestillt, längste Pause, Windeln
-- Statistik „Bobos Takt“ (7/14/30 Tage): wie oft pro Tag, mittlerer Abstand, wie oft nachts, längste Pause;
+- Statistik „Bobos Takt“ als eigener Tab (7/14/30 Tage): wie oft pro Tag, mittlerer Abstand, wie oft nachts, längste Pause;
   Säulen pro Tag und je Tagesstunde, Raster Tag × Stunde fürs Muster, Seitenverteilung, Abstands-Klassen, Tabelle
 - Medikamente für Mama: Paracetamol, Ibuprofen & Co. mit Mindestabstand und Tageshöchstzahl, „Wieder ab 16:30“
   auf einen Blick, Erinnerung per Home Assistant

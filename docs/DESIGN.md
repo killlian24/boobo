@@ -57,9 +57,9 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
 
 ## Ergänzung 3: App-Gefühl
 
-- Tabs unten (60 hoch, Fläche `--surface`, Linie `--line`): „Stillen“ und „Wachstum“. Aktiver Tab Text `--text`,
+- Tabs unten (60 hoch, Fläche `--surface`, Linie `--line`): „Stillen“, „Wachstum“ und „Statistik“. Aktiver Tab Text `--text`,
   Symbol `--ink-l`. Jeder Tab behält seine Scrollposition; der zuletzt offene Tab ist beim Start wieder offen
-  (localStorage `boobo.tab`, Adresse `#wachstum`). Wechsel mit 180 ms Einblenden.
+  (localStorage `boobo.tab`, Adresse `#wachstum` bzw. `#statistik`). Wechsel mit 180 ms Einblenden.
 - Kopfzeile bleibt beim Scrollen stehen (sticky, Fläche `--bg`).
 - Kein Neuladen und kein Gummiband des Browsers (`overscroll-behavior-y: contain`). Eigene Geste: oben nach unten ziehen,
   ab 64 px „Loslassen zum Aktualisieren“, dann Ring dreht, Daten neu holen, kein Seiten-Reload.
@@ -76,9 +76,9 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
 ## Ergänzung 5: Statistik
 
 - Erklärtexte stehen nicht in der Fläche. Jeder Abschnitt trägt rechts ein kleines „i“ (20 px Icon, 44 px Tippfläche,
-  `--text-2`), das die Erklärung als Kasten (`--bg`, Haarlinie `--line`, Radius 12, 0.8125 rem) unter dem Titel ein- und
+  `--text-2`), das die Erklärung als Kasten (`--surface`, Haarlinie `--line`, Radius 12, 0.8125 rem) unter dem Titel ein- und
   ausblendet. Sichtbar bleiben Zahlen und Befunde.
-- Kennzahl-Kacheln: Fläche `--bg` mit Haarlinie, Radius 16, Label 0.8125 rem, Wert 1.75 rem proportional (kein
+- Kennzahl-Kacheln: Karten (`--surface`, Schatten wie Karten), Radius 16, Label 0.8125 rem, Wert 1.75 rem proportional (kein
   `tabular-nums`), Unterzeile 0.75 rem.
 - Diagramme: eine Datenfarbe `--ink-l` (im Nachtmodus entsättigt), heute mit 45 % Deckung, Nachtband `--line` 45 %,
   Gitter `--line` 1 px, Balken höchstens 24 px breit mit 4 px Rundung oben, Achsentext 11 px `--text-2`.

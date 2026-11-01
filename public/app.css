@@ -948,21 +948,10 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 /* ---------- Erweiterung 4: Statistik („Bobos Takt“) ---------- */
 
-.topbar-actions { display: flex; align-items: center; gap: 2px; margin-right: -10px; }
-.topbar-actions .icon-btn { margin-right: 0; }
-
-.sheet-tall { max-height: 96dvh; min-height: 70dvh; }
-@media (min-width: 640px) { .sheet-tall { min-height: 0; } }
-.sheet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: -6px 0 10px;
-}
-.sheet-head h2 { margin: 0; }
-.sheet-head .icon-btn { margin-right: -10px; }
 .stats-range { margin-bottom: 4px; }
+#stats-skeleton .stats-tiles { margin-top: 14px; }
+.skel-tile { height: 92px; border-radius: var(--r-s); }
+#stats-skeleton .skel-line { margin-top: 22px; }
 
 .stats-body { transition: opacity 0.2s; }
 .stats-body.loading { opacity: 0.55; }
@@ -992,7 +981,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   margin: 8px 0 0;
   padding: 10px 12px;
   border-radius: var(--r-xs);
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--line);
   font-size: 0.8125rem;
   line-height: 18px;
@@ -1019,8 +1008,8 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   gap: 2px;
   padding: 12px 14px;
   border-radius: var(--r-s);
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   min-width: 0;
 }
 .tile-label { font-size: 0.8125rem; font-weight: 600; color: var(--text-2); }
@@ -1150,7 +1139,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   bottom: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding: 0 max(var(--gutter), calc((100% - 600px) / 2)) env(safe-area-inset-bottom);
   background: var(--surface);

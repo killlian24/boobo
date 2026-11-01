@@ -87,7 +87,7 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 
 | Stelle | Text |
 |---|---|
-| Kopfzeile / Karte | Icon-Button „Statistik“ · Link „Statistik“ in „Letzte 24 Stunden“ |
+| Tab / Karte | Tab „Statistik“ in der Leiste unten · Link „Statistik“ in „Letzte 24 Stunden“ |
 | Titel | „Bobos Takt“ |
 | Zeitraum | „7 Tage“ / „14 Tage“ / „30 Tage“ |
 | Kennzahlen „Auf einen Blick“ | „Pro Tag“ (8,2 · „13 volle Tage“ / „noch kein voller Tag“) · „Abstand“ (2 h 57 · „meist 2 h 54“) · „Nachts“ (2,8 · „pro Nacht“) · „Längste Pause“ (4 h 48 · „bis gestern 09:14“) |

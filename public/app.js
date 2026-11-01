@@ -1583,21 +1583,21 @@
 
   var currentView = 'home';
   var LS_TAB = 'boobo.tab';
-  var scrollMem = { home: 0, growth: 0 };
+  var VIEW_HASH = { home: '', growth: '#wachstum', stats: '#statistik' };
+  var scrollMem = { home: 0, growth: 0, stats: 0 };
   function showView(name, fromHash) {
-    if (name !== 'growth') name = 'home';
+    if (!(name in VIEW_HASH)) name = 'home';
     var changed = name !== currentView;
     if (changed) scrollMem[currentView] = window.scrollY;
     currentView = name;
-    lsSet(LS_TAB, name === 'growth' ? 'growth' : null);
-    $('#view-home').hidden = name !== 'home';
-    $('#view-growth').hidden = name !== 'growth';
+    lsSet(LS_TAB, name === 'home' ? null : name);
+    Object.keys(VIEW_HASH).forEach(function (k) { $('#view-' + k).hidden = k !== name; });
     $$('.tab').forEach(function (t) {
       if (t.getAttribute('data-view') === name) t.setAttribute('aria-current', 'page');
       else t.removeAttribute('aria-current');
     });
     if (!fromHash) {
-      var hash = name === 'growth' ? '#wachstum' : '';
+      var hash = VIEW_HASH[name];
       if (location.hash !== hash) {
         try { history.pushState(null, '', hash || location.pathname + location.search); } catch (e) { location.hash = hash; }
       }
@@ -1605,14 +1605,19 @@
     if (changed) {
       // jede Ansicht behält ihre Scrollposition, wie bei Tabs in Apps
       window.scrollTo(0, scrollMem[name] || 0);
-      var v = $(name === 'growth' ? '#view-growth' : '#view-home');
+      var v = $('#view-' + name);
       v.classList.remove('view-in');
       void v.offsetWidth;
       v.classList.add('view-in');
     }
     if (name === 'growth') loadGrowth();
+    if (name === 'stats') loadStats();
   }
-  function viewFromHash() { return location.hash === '#wachstum' ? 'growth' : 'home'; }
+  function viewFromHash() {
+    var h = location.hash;
+    for (var k in VIEW_HASH) if (VIEW_HASH[k] && VIEW_HASH[k] === h) return k;
+    return 'home';
+  }
 
   function renderGrowthSheet() {
     var g = state.growth;
@@ -2166,11 +2171,12 @@
     });
     window.addEventListener('popstate', function () { showView(viewFromHash(), true); });
     window.addEventListener('hashchange', function () { showView(viewFromHash(), true); });
-    // Start: Adresse (#wachstum) vor dem zuletzt offenen Tab
-    var startView = location.hash ? viewFromHash() : (lsGet(LS_TAB) === 'growth' ? 'growth' : 'home');
-    if (startView === 'growth') {
-      if (location.hash !== '#wachstum') { try { history.replaceState(null, '', '#wachstum'); } catch (e) { /* egal */ } }
-      showView('growth', true);
+    // Start: Adresse (#wachstum, #statistik) vor dem zuletzt offenen Tab
+    var remembered = lsGet(LS_TAB);
+    var startView = location.hash ? viewFromHash() : (remembered in VIEW_HASH ? remembered : 'home');
+    if (startView !== 'home') {
+      if (location.hash !== VIEW_HASH[startView]) { try { history.replaceState(null, '', VIEW_HASH[startView]); } catch (e) { /* egal */ } }
+      showView(startView, true);
     }
     $('#btn-growth-measure').addEventListener('click', function () { openMeasure(null); });
     $('#btn-growth-profile').addEventListener('click', openProfile);
@@ -2285,30 +2291,23 @@
     return STATS_RANGES.indexOf(v) >= 0 ? v : STATS_DAYS_DEFAULT;
   }
 
-  function openStats() {
-    stats.days = getStatsDays();
-    segSet($('#stats-range'), String(stats.days));
-    if (!stats.data) {
-      var body = $('#stats-body');
-      body.textContent = '';
-      body.appendChild(el('p', { class: 'empty-hint', text: 'Lade …' }));
-    }
-    openDialog($('#dlg-stats'));
-    loadStats();
-  }
-
+  // Lädt die Statistik für den gewählten Zeitraum. Beim ersten Mal steht der Platzhalter, danach bleibt die alte
+  // Darstellung halbtransparent stehen, bis die neuen Zahlen da sind.
   function loadStats() {
     var days = stats.days;
     var seq = ++stats.seq;
     var body = $('#stats-body');
+    segSet($('#stats-range'), String(days));
     body.classList.add('loading');
     return api('GET', '/api/stats?days=' + days).then(function (res) {
       if (seq !== stats.seq) return;
       stats.data = res;
+      $('#stats-skeleton').hidden = true;
       renderStats();
     }).catch(function (err) {
       if (seq !== stats.seq) return;
       if (!stats.data) {
+        $('#stats-skeleton').hidden = true;
         body.textContent = '';
         body.appendChild(el('p', { class: 'empty-hint', text: errorText(err) }));
       } else {
@@ -2666,14 +2665,15 @@
 
   var statsResizeTimer = null;
   function initStats() {
-    $('#btn-stats').addEventListener('click', openStats);
-    $('#btn-stats-more').addEventListener('click', openStats);
+    stats.days = getStatsDays();
+    segSet($('#stats-range'), String(stats.days));
+    $('#btn-stats-more').addEventListener('click', function () { showView('stats'); });
     $('#stats-range').addEventListener('click', function (e) {
       var b = e.target.closest('.seg');
       if (b) setStatsRange(parseInt(b.getAttribute('data-value'), 10));
     });
     window.addEventListener('resize', function () {
-      if (!$('#dlg-stats').open || !stats.data) return;
+      if (currentView !== 'stats' || !stats.data) return;
       clearTimeout(statsResizeTimer);
       statsResizeTimer = setTimeout(renderStats, 150);
     });
@@ -2807,6 +2807,7 @@
       set(44, 'Aktualisiere …', 'loading');
       var jobs = [refresh()];
       if (currentView === 'growth') jobs.push(loadGrowth());
+      if (currentView === 'stats') jobs.push(loadStats());
       Promise.all(jobs).catch(function () { /* Banner zeigt Fehler */ }).then(function () {
         busy = false;
         dist = 0;
@@ -2850,11 +2851,11 @@
     initConfirm();
     initChips();
     initClickSwallow();
+    initStats();
     initGrowth();
     initPull();
     // iOS Safari zeigt den Druckzustand (:active) nur, wenn es irgendeinen touchstart-Listener gibt
     document.addEventListener('touchstart', function () {}, { passive: true });
-    initStats();
 
     $$('.feed-btn').forEach(function (b) {
       var side = b.getAttribute('data-side');
