@@ -163,7 +163,7 @@
       </div>
 
       <div class="chart-wrap">
-        <div id="growth-chart" class="chart" role="img" aria-label="Wachstumskurve"></div>
+        <div id="growth-chart" class="gchart" role="img" aria-label="Wachstumskurve"></div>
         <p id="growth-chart-note" class="hint"></p>
       </div>
       <div class="chips range-chips" id="growth-range" role="group" aria-label="Zeitraum">
@@ -571,13 +571,14 @@
   <dialog id="dlg-import" class="sheet">
     <form method="dialog" id="form-import" novalidate>
       <h2>Kurve importieren</h2>
-      <div class="field">
+      <div class="field" id="import-target-wrap">
         <span class="field-label" id="import-target-label">Wofür?</span>
         <div class="segmented two neutral" id="import-target" role="radiogroup" aria-labelledby="import-target-label" data-name="target">
           <button type="button" class="seg" data-value="dk" aria-pressed="true">Dänemark 2014</button>
           <button type="button" class="seg" data-value="custom" aria-pressed="false">Eigene Kurve</button>
         </div>
       </div>
+      <p id="import-custom-help" class="import-help">Für weitere Referenzen, z. B. aus der Schweiz oder für Frühgeborene. WHO, Deutschland und Dänemark sind schon eingebaut.</p>
       <div id="import-dk-help" class="import-help">
         <p>Die dänischen Kurven (Tinggaard et al., Acta Paediatrica 2014) sind nicht frei verfügbar. Die LMS-Tabelle steht im Online-Supplement des Artikels (doi:10.1111/apa.12468), mit Bibliothekszugang abrufbar.</p>
       </div>

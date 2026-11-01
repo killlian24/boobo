@@ -27,7 +27,7 @@ ohne Cloud, ohne Abhängigkeiten.
 - Einstellbares Intervall (Standard 3 h), CSV-Export
 - JSON-API für Home Assistant inkl. fertiger Sensoren, Erinnerungs-Automation und Notieren per Taster/Fernbedienung
 - Wachstum: Geburtsdaten und Messungen (Gewicht, Länge, Kopfumfang) eintragen, Perzentilen nach WHO 2006,
-  deutscher Referenz (Kromeyer-Hauschild, KiGGS) oder dänischer Referenz 2014 (Import), Kurven mit Zielkanal,
+  deutscher Referenz (Kromeyer-Hauschild, KiGGS) oder dänischer Referenz 2014 (Tinggaard), Kurven mit Zielkanal,
   Zunahme pro Woche, WHO-Zunahme pro Monat, Gewichtsverlust nach der Geburt, Zielgröße (Tanner und
   Hermanussen-Cole), korrigiertes Alter bei Frühgeburt. Eigene Referenzkurven als CSV oder JSON importierbar
 - Node.js 24 + SQLite (`node:sqlite`), **keine npm-Pakete**, `server.js` plus `lib/growth.js`
@@ -209,11 +209,15 @@ erzeugt (Anleitung im Skript):
 - **Deutschland** (`growth/de.json`): Kromeyer-Hauschild et al. 2001 für Gewicht und Länge (das ist die Referenz im
   gelben Heft), Kopfumfang aus KiGGS 2003 bis 2006 (Robert Koch-Institut, erst ab 4 Monaten). LMS-Tabellen aus dem
   R-Paket `childsds`.
-- **Dänemark**: Tinggaard et al., Acta Paediatrica 2014 (doi:10.1111/apa.12468). Die LMS-Werte stehen nur im
-  Online-Supplement des Artikels und sind nicht frei weiterverteilbar. Deshalb einmal in der App importieren:
-  Wachstum → Kurven → „Dänemark“ (oder „Kurve importieren“). Akzeptiert CSV mit den Spalten Messgröße, Geschlecht,
-  Alter, L, M, S (auch `nu`, `mu`, `sigma`; Komma oder Semikolon, Dezimalkomma; Kopfzeilen deutsch, dänisch oder
-  englisch). Fehlen Messgröße oder Geschlecht als Spalte, wählt man sie im Dialog. Mehrere Importe ergänzen sich.
+- **Dänemark** (`growth/dk.json`): Tinggaard et al., Acta Paediatrica 2014 (doi:10.1111/apa.12468), LMS-Werte aus
+  den Supplement-Tabellen S2 (Länge/Größe 0 bis 20 Jahre), S3 (Gewicht 0 bis 20 Jahre) und S6 (Kopfumfang 0 bis
+  5 Jahre), jede Zeile gegen die mitgedruckten SD-Spalten geprüft. Die Tabellen haben Stützstellen alle 3 Monate;
+  dazwischen interpoliert Boobo monoton kubisch (PCHIP). Das Supplement ist urheberrechtlich geschützt: das Repository
+  privat halten.
+- **Eigene Kurven** lassen sich in der App importieren (Wachstum → „Andere Kurve importieren“): CSV mit den Spalten
+  Messgröße, Geschlecht, Alter, L, M, S (auch `nu`, `mu`, `sigma`; Komma oder Semikolon, Dezimalkomma; Kopfzeilen
+  deutsch, dänisch oder englisch). Fehlen Messgröße oder Geschlecht als Spalte, wählt man sie im Dialog. Mehrere
+  Importe ergänzen sich.
 
 Die Zielgröße rechnet Boobo zweifach: nach Tanner (Mittel der Elterngrößen ± 6,5 cm, Bereich ± 8,5 cm) und nach
 Hermanussen & Cole 2003 (Ziel-SDS = 0,72 × mittlerer Eltern-SDS, Bereich ± 1,6 SDS, bezogen auf die

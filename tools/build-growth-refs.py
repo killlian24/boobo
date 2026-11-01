@@ -10,13 +10,20 @@ Quellen (einmalig herunterladen, entpacken, Pfade als Argumente übergeben):
   3. R-Paket `childsds` (CRAN, M. Vogel, Uni Leipzig) mit den LMS-Tabellen
      Kromeyer-Hauschild 2001 (kro.ref), KiGGS 2003-2006 (kiggs.ref) und WHO 2007 (who2007.ref):
      https://cran.r-project.org/package=childsds -> childsds/data/*.rda
+  4. Dänische Referenz 2014, Online-Supplement zu Tinggaard et al., Acta Paediatr 2014;103:214-24
+     (doi:10.1111/apa.12468, Bibliothekszugang): apa12468-sup-0006-tables2.pdf (Länge/Größe),
+     apa12468-sup-0007-tables3.pdf (Gewicht), apa12468-sup-0010-tables6.pdf (Kopfumfang).
+     Jede Zeile wird gegen die mitgedruckten ±1- und ±2-SD-Spalten geprüft.
 
 Aufruf:
-  pip install rdata openpyxl
-  python3 tools/build-growth-refs.py <anthro-dir> <childsds-dir> <velocity-boys.xlsx> <velocity-girls.xlsx>
+  pip install rdata openpyxl pypdf
+  python3 tools/build-growth-refs.py <anthro-dir> <childsds-dir> <velocity-boys.xlsx> <velocity-girls.xlsx> [<tinggaard-dir>]
 """
 import json
+import logging
+import math
 import os
+import re
 import sys
 import warnings
 
@@ -72,7 +79,50 @@ def velocity(path):
     return out
 
 
-def main(anthro_dir, childsds_dir, vel_boys, vel_girls):
+def danish(dirname):
+    import pypdf
+    logging.disable(logging.WARNING)
+    files = {'length': 'apa12468-sup-0006-tables2.pdf', 'weight': 'apa12468-sup-0007-tables3.pdf',
+             'hc': 'apa12468-sup-0010-tables6.pdf'}
+
+    def val(z, L, M, S):
+        return M * (1 + L * S * z) ** (1 / L) if abs(L) > 1e-9 else M * math.exp(S * z)
+
+    measures = {}
+    for m, f in files.items():
+        text = '\n'.join(p.extract_text() for p in pypdf.PdfReader(os.path.join(dirname, f)).pages)
+        rows = {'male': [], 'female': []}
+        for line in text.splitlines():
+            nums = re.findall(r'-?\d+,\d+', line)
+            if len(nums) != 15:  # Alter + je Geschlecht L, M, S, -2, -1, +1, +2 SD
+                continue
+            v = [float(x.replace(',', '.')) for x in nums]
+            for sex, o in (('male', 1), ('female', 8)):
+                L, M, S = v[o:o + 3]
+                for z, printed in zip((-2, -1, 1, 2), v[o + 3:o + 7]):
+                    assert abs(val(z, L, M, S) - printed) < 0.05, (m, sex, v[0], z)
+                rows[sex].append([round(v[0] * DAYS_PER_YEAR, 2), L, M, S])
+        assert rows['male'] and len(rows['male']) == len(rows['female']), m
+        measures[m] = {'unit': 'kg' if m == 'weight' else 'cm', **rows}
+    last = {s: measures['length'][s][-1] for s in ('male', 'female')}
+    return {
+        'id': 'dk',
+        'name': 'Dänemark',
+        'title': 'Dänische Referenz 2014 (Tinggaard et al.)',
+        'kind': 'reference',
+        'description': 'Gesunde, termingerecht geborene dänische Kinder aus drei Kopenhagener Studien. Die Kurven der Sundhedsplejerske. Werte alle 3 Monate bis 2 Jahre, Kopfumfang bis 5 Jahre.',
+        'source': 'Tinggaard J, Aksglaede L, Sørensen K, et al. The 2014 Danish references from birth to 20 years for height, weight and body mass index. Acta Paediatr 2014;103:214-24. doi:10.1111/apa.12468. LMS-Werte aus den Supplement-Tabellen S2, S3 und S6.',
+        'lines': [
+            {'z': -2, 'label': '−2 SD'}, {'z': -1, 'label': '−1 SD'}, {'z': 0, 'label': '0'},
+            {'z': 1, 'label': '+1 SD'}, {'z': 2, 'label': '+2 SD'},
+        ],
+        'measures': measures,
+        'adult_height': {'age_years': round(last['male'][0] / DAYS_PER_YEAR),
+                         'male': last['male'][1:], 'female': last['female'][1:]},
+    }
+
+
+def main(anthro_dir, childsds_dir, vel_boys, vel_girls, tinggaard_dir=None):
     sysdata = rdata.read_rda(os.path.join(anthro_dir, 'R', 'sysdata.rda'))
     wei = sysdata['growthstandards_weianthro']
     leng = sysdata['growthstandards_lenanthro']
@@ -140,8 +190,11 @@ def main(anthro_dir, childsds_dir, vel_boys, vel_girls):
         },
     }
 
+    docs = [who, de]
+    if tinggaard_dir:
+        docs.append(danish(tinggaard_dir))
     os.makedirs(OUT, exist_ok=True)
-    for doc in (who, de):
+    for doc in docs:
         with open(os.path.join(OUT, doc['id'] + '.json'), 'w', encoding='utf-8') as f:
             json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
             f.write('\n')
@@ -149,6 +202,6 @@ def main(anthro_dir, childsds_dir, vel_boys, vel_girls):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 5:
+    if len(sys.argv) not in (5, 6):
         sys.exit(__doc__)
     main(*sys.argv[1:])

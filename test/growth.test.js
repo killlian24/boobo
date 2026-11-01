@@ -67,6 +67,23 @@ describe('lib/growth: LMS-Rechnung gegen WHO-Tabellen', () => {
     assert.equal(growth.targetHeight({ sex: 'female' }, who), null);
   });
 
+  test('Dänemark: Werte der Supplement-Tabellen S2, S3, S6 und glatte Interpolation', () => {
+    const dk = refs.get('dk');
+    const w0 = growth.lmsAt(dk.measures.weight.male, 0);
+    assert.deepEqual([w0.L, w0.M, w0.S], [0.8076, 3.2987, 0.1373]);
+    const l1 = growth.lmsAt(dk.measures.length.female, 365.25);
+    assert.deepEqual([l1.L, l1.M, l1.S], [1, 75.0056, 0.0346]);
+    const hc = growth.lmsAt(dk.measures.hc.male, 0);
+    assert.equal(hc.M, 34.65);
+    // gedruckte +2 SD Gewicht Mädchen bei 6 Monaten: 9,70 kg
+    assert.equal(growth.valueAtZ(2, growth.lmsAt(dk.measures.weight.female, 0.5 * 365.25)).toFixed(2), '9.70');
+    // zwischen den Stützstellen monoton und oberhalb der Geraden (Wachstum flacht ab)
+    const m = [0, 15, 30, 45, 60, 91.31].map((d) => growth.lmsAt(dk.measures.weight.male, d).M);
+    for (let i = 1; i < m.length; i++) assert.ok(m[i] > m[i - 1]);
+    assert.ok(m[2] > 3.2987 + (6.4513 - 3.2987) * 30 / 91.31);
+    assert.deepEqual(dk.adult_height.male, [1, 181.1975, 0.0356]);
+  });
+
   test('korrigiertes Alter bei Geburt vor 37+0', () => {
     assert.equal(growth.correctionDays({ gestation_weeks: 34, gestation_days: 2 }), 280 - 240);
     assert.equal(growth.correctionDays({ gestation_weeks: 38, gestation_days: 0 }), 0);
@@ -95,13 +112,13 @@ describe('API /api/growth', () => {
   before(async () => { ctx = await startApp(); });
   after(() => ctx.stop());
 
-  test('ohne Profil: leere Auswertung, Referenzen gelistet, DK noch nicht verfügbar', async () => {
+  test('ohne Profil: leere Auswertung, Referenzen WHO, DE und DK gelistet', async () => {
     const r = await ctx.api('GET', '/api/growth');
     assert.equal(r.status, 200);
     assert.equal(r.json.ref.id, 'who');
     assert.equal(r.json.age_days, null);
     const ids = r.json.refs.map((x) => [x.id, x.available]);
-    assert.deepEqual(ids, [['who', true], ['de', true], ['dk', false]]);
+    assert.deepEqual(ids, [['who', true], ['de', true], ['dk', true]]);
     assert.equal((await ctx.api('GET', '/api/state')).json.growth, null);
   });
 
@@ -110,8 +127,8 @@ describe('API /api/growth', () => {
     assert.equal(r.status, 400);
     r = await ctx.api('PUT', '/api/growth/profile', { birth_date: '2099-01-01' });
     assert.equal(r.status, 400);
-    r = await ctx.api('PUT', '/api/growth/profile', { ref: 'dk' });
-    assert.equal(r.status, 400, 'dk ist ohne Import nicht wählbar');
+    r = await ctx.api('PUT', '/api/growth/profile', { ref: 'gibtsnicht' });
+    assert.equal(r.status, 400, 'unbekannte Kurve');
     r = await ctx.api('PUT', '/api/growth/profile', {
       name: 'Bobo', sex: 'female', birth_date: ymd(30), gestation_weeks: 40, gestation_days: 1,
       birth_weight_g: 3400, birth_length_cm: 51, birth_hc_cm: 35, mother_height_cm: 168, father_height_cm: 185,
@@ -176,26 +193,37 @@ describe('API /api/growth', () => {
     assert.equal((await ctx.api('DELETE', `/api/growth/measurements/${a.json.measurement.id}`)).status, 404);
   });
 
-  test('Import dänischer Kurven per CSV, Ergänzen, Auswahl, Löschen', async () => {
+  test('Dänische Kurven eingebaut: SD-Linien, Zielgröße mit 20 Jahren', async () => {
+    const g = (await ctx.api('GET', '/api/growth?ref=dk')).json;
+    assert.equal(g.ref.id, 'dk');
+    assert.equal(g.ref.builtin, true);
+    assert.deepEqual(g.ref.measures, ['weight', 'length', 'hc']);
+    assert.equal(g.lines[0].label, '−2 SD');
+    assert.ok(g.latest.weight.p > 0 && g.latest.hc.p > 0);
+    assert.equal(g.target.sds.adult_age_years, 20);
+    assert.equal((await ctx.api('POST', '/api/growth/refs', { id: 'dk', csv: 'a,b\n1,2\n3,4' })).status, 400, 'eingebaut');
+  });
+
+  test('Import eigener Kurven per CSV, Ergänzen, Auswahl, Löschen', async () => {
     const rows = ['measure,sex,age_days,L,M,S'];
     for (const sex of ['male', 'female']) {
       for (let d = 0; d <= 730; d += 30) rows.push(`weight,${sex},${d},0.2,${(3.5 + d * 0.01).toFixed(3)},0.12`);
     }
-    let r = await ctx.api('POST', '/api/growth/refs', { id: 'dk', csv: rows.join('\n') });
+    let r = await ctx.api('POST', '/api/growth/refs', { id: 'meine', name: 'Meine Kurve', csv: rows.join('\n') });
     assert.equal(r.status, 201);
     assert.equal(r.json.ref.available, true);
     assert.deepEqual(r.json.ref.measures, ['weight']);
-    assert.equal(r.json.ref.name, 'Dänemark');
+    assert.equal(r.json.ref.name, 'Meine Kurve');
 
     const len = ['measure,sex,age_years,L,M,S'];
     for (const sex of ['male', 'female']) for (let y = 0; y <= 20; y++) len.push(`length,${sex},${y},1,${50 + y * 6},0.04`);
-    r = await ctx.api('POST', '/api/growth/refs', { id: 'dk', csv: len.join('\n') });
+    r = await ctx.api('POST', '/api/growth/refs', { id: 'meine', csv: len.join('\n') });
     assert.deepEqual(r.json.ref.measures, ['weight', 'length'], 'Länge ergänzt, Gewicht bleibt');
     assert.equal(r.json.ref.has_adult_height, true);
 
-    assert.equal((await ctx.api('PATCH', '/api/growth/profile', { ref: 'dk' })).status, 200);
+    assert.equal((await ctx.api('PATCH', '/api/growth/profile', { ref: 'meine' })).status, 200);
     const g = (await ctx.api('GET', '/api/growth')).json;
-    assert.equal(g.ref.id, 'dk');
+    assert.equal(g.ref.id, 'meine');
     assert.equal(g.lines[0].label, '−2 SD');
     assert.ok(g.latest.weight.p !== undefined);
 
@@ -205,10 +233,10 @@ describe('API /api/growth', () => {
     assert.equal(own.json.ref.id, 'eigene-1');
 
     assert.equal((await ctx.api('DELETE', '/api/growth/refs/who')).status, 400);
-    assert.equal((await ctx.api('DELETE', '/api/growth/refs/dk')).status, 204);
+    assert.equal((await ctx.api('DELETE', '/api/growth/refs/meine')).status, 204);
     assert.equal((await ctx.api('GET', '/api/growth/profile')).json.profile.ref, null);
-    const after = (await ctx.api('GET', '/api/growth?ref=dk')).json;
+    const after = (await ctx.api('GET', '/api/growth?ref=meine')).json;
     assert.equal(after.ref.id, 'who');
-    assert.equal(after.ref_unavailable, 'dk');
+    assert.equal(after.ref_unavailable, 'meine');
   });
 });

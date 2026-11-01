@@ -1664,15 +1664,14 @@
 
   // ---------- Diagramm (SVG) ----------
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-  function svgEl(tag, attrs, text) {
-    var n = document.createElementNS(SVG_NS, tag);
+  function gSvgEl(tag, attrs, text) {
+    var n = document.createElementNS('http://www.w3.org/2000/svg', tag);
     Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
     if (text != null) n.textContent = text;
     return n;
   }
 
-  function niceStep(span, target) {
+  function gNiceStep(span, target) {
     var raw = span / target;
     var mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
     var steps = [1, 2, 2.5, 5, 10];
@@ -1729,24 +1728,24 @@
     if (!isFinite(lo)) return;
     var pad = (hi - lo) * 0.04;
     lo -= pad; hi += pad;
-    var step = niceStep(hi - lo, 6);
+    var step = gNiceStep(hi - lo, 6);
     lo = Math.floor(lo / step) * step;
     hi = Math.ceil(hi / step) * step;
 
     var X = function (d) { return ml + (d - x0) / (x1 - x0) * (W - ml - mr); };
     var Y = function (v) { return mt + (hi - v) / (hi - lo) * (H - mt - mb); };
 
-    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, 'aria-hidden': 'true' });
-    var grid = svgEl('g', { class: 'grid' });
+    var svg = gSvgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, 'aria-hidden': 'true' });
+    var grid = gSvgEl('g', { class: 'grid' });
     for (var v = lo; v <= hi + step / 2; v += step) {
-      grid.appendChild(svgEl('line', { x1: ml, x2: W - mr, y1: Y(v), y2: Y(v) }));
-      grid.appendChild(svgEl('text', { x: ml - 5, y: Y(v) + 3.5, 'text-anchor': 'end' }, step < 1 ? fmtDec1.format(v) : fmtInt.format(v)));
+      grid.appendChild(gSvgEl('line', { x1: ml, x2: W - mr, y1: Y(v), y2: Y(v) }));
+      grid.appendChild(gSvgEl('text', { x: ml - 5, y: Y(v) + 3.5, 'text-anchor': 'end' }, step < 1 ? fmtDec1.format(v) : fmtInt.format(v)));
     }
     xTicks(x1).forEach(function (t) {
-      grid.appendChild(svgEl('line', { class: 'v', x1: X(t[0]), x2: X(t[0]), y1: mt, y2: H - mb }));
-      grid.appendChild(svgEl('text', { x: X(t[0]), y: H - mb + 15, 'text-anchor': t[0] === 0 ? 'start' : 'middle' }, t[1]));
+      grid.appendChild(gSvgEl('line', { class: 'v', x1: X(t[0]), x2: X(t[0]), y1: mt, y2: H - mb }));
+      grid.appendChild(gSvgEl('text', { x: X(t[0]), y: H - mb + 15, 'text-anchor': t[0] === 0 ? 'start' : 'middle' }, t[1]));
     });
-    grid.appendChild(svgEl('text', { x: ml - 5, y: 9, 'text-anchor': 'end', class: 'unit' }, kg ? 'kg' : 'cm'));
+    grid.appendChild(gSvgEl('text', { x: ml - 5, y: 9, 'text-anchor': 'end', class: 'unit' }, kg ? 'kg' : 'cm'));
     svg.appendChild(grid);
 
     function pathOf(points) {
@@ -1762,40 +1761,40 @@
     var band = pathOf(outerLo) + outerHi.slice().reverse().map(function (p) {
       return 'L' + X(p[0]).toFixed(1) + ' ' + Y(scale(p[1])).toFixed(1);
     }).join('') + 'Z';
-    svg.appendChild(svgEl('path', { class: 'band', d: band }));
+    svg.appendChild(gSvgEl('path', { class: 'band', d: band }));
 
     var labelYs = [];
     lines.forEach(function (line) {
-      svg.appendChild(svgEl('path', { class: 'pline' + (line.z === 0 ? ' median' : ''), d: pathOf(line.points) }));
+      svg.appendChild(gSvgEl('path', { class: 'pline' + (line.z === 0 ? ' median' : ''), d: pathOf(line.points) }));
       var last = line.points[line.points.length - 1];
       if (last && isNum(last[1])) labelYs.push({ y: Y(scale(last[1])), x: X(last[0]), label: line.label });
     });
     // Beschriftungen nicht übereinander
     labelYs.sort(function (a, b) { return a.y - b.y; });
     for (var i = 1; i < labelYs.length; i++) if (labelYs[i].y - labelYs[i - 1].y < 10) labelYs[i].y = labelYs[i - 1].y + 10;
-    labelYs.forEach(function (l) { svg.appendChild(svgEl('text', { class: 'plabel', x: l.x + 4, y: l.y + 3.5 }, l.label)); });
+    labelYs.forEach(function (l) { svg.appendChild(gSvgEl('text', { class: 'plabel', x: l.x + 4, y: l.y + 3.5 }, l.label)); });
 
     if (c.target && g.target && g.target.sds) {
-      svg.appendChild(svgEl('path', { class: 'target', d: pathOf(c.target.points) }));
+      svg.appendChild(gSvgEl('path', { class: 'target', d: pathOf(c.target.points) }));
       var tl = c.target.points[Math.floor(c.target.points.length * 0.62)];
-      if (tl && isNum(tl[1])) svg.appendChild(svgEl('text', { class: 'tlabel', x: X(tl[0]), y: Y(scale(tl[1])) - 6, 'text-anchor': 'middle' }, 'Zielkanal'));
+      if (tl && isNum(tl[1])) svg.appendChild(gSvgEl('text', { class: 'tlabel', x: X(tl[0]), y: Y(scale(tl[1])) - 6, 'text-anchor': 'middle' }, 'Zielkanal'));
     }
 
     if (pts.length) {
       pts.sort(function (a, b) { return a.x - b.x; });
       if (pts.length > 1) {
-        svg.appendChild(svgEl('path', {
+        svg.appendChild(gSvgEl('path', {
           class: 'series',
           d: pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1); }).join('')
         }));
       }
       pts.forEach(function (p) {
-        svg.appendChild(svgEl('circle', { class: 'pt' + (p.m.id === 'birth' ? ' birth' : ''), cx: X(p.x).toFixed(1), cy: Y(p.y).toFixed(1), r: 3.6 }));
+        svg.appendChild(gSvgEl('circle', { class: 'pt' + (p.m.id === 'birth' ? ' birth' : ''), cx: X(p.x).toFixed(1), cy: Y(p.y).toFixed(1), r: 3.6 }));
       });
     }
     if (isNum(g.corrected_age_days) || isNum(g.age_days)) {
       var now = isNum(g.corrected_age_days) ? g.corrected_age_days : g.age_days;
-      if (now >= 0 && now <= x1) svg.appendChild(svgEl('line', { class: 'now', x1: X(now), x2: X(now), y1: mt, y2: H - mb }));
+      if (now >= 0 && now <= x1) svg.appendChild(gSvgEl('line', { class: 'now', x1: X(now), x2: X(now), y1: mt, y2: H - mb }));
     }
     root.appendChild(svg);
 
@@ -2074,10 +2073,16 @@
 
   // ---------- Kurve importieren ----------
 
+  // Dänemark ist eingebaut (growth/dk.json); nur wenn die Datei fehlt, lässt es sich importieren
+  function dkAvailable() {
+    return !!(state.growth && (state.growth.refs || []).some(function (r) { return r.id === 'dk' && r.available; }));
+  }
   function openImport(target) {
     var form = $('#form-import');
     form.reset();
-    segSet($('#import-target'), target === 'custom' ? 'custom' : 'dk');
+    var dkOk = dkAvailable();
+    $('#import-target-wrap').hidden = dkOk;
+    segSet($('#import-target'), target === 'dk' && !dkOk ? 'dk' : 'custom');
     updateImportTarget();
     renderImportedRefs();
     openDialog($('#dlg-import'));
@@ -2087,6 +2092,7 @@
     var custom = segGet($('#import-target')) === 'custom';
     $('#import-name-wrap').hidden = !custom;
     $('#import-dk-help').hidden = custom;
+    $('#import-custom-help').hidden = !custom || !dkAvailable();
   }
 
   function renderImportedRefs() {
@@ -2185,7 +2191,7 @@
       if (currentView !== 'growth') showView('growth');
       openProfile();
     });
-    $('#btn-growth-import').addEventListener('click', function () { openImport('dk'); });
+    $('#btn-growth-import').addEventListener('click', function () { openImport(dkAvailable() ? 'custom' : 'dk'); });
     $('#form-measure').addEventListener('submit', submitMeasure);
     $('#btn-measure-delete').addEventListener('click', deleteMeasure);
     $('#form-profile').addEventListener('submit', submitProfile);
@@ -2787,7 +2793,7 @@
     }
     document.addEventListener('touchstart', function (e) {
       if (busy || dialogStack.length || e.touches.length !== 1 || window.scrollY > 0) { y0 = null; return; }
-      if (e.target.closest && e.target.closest('.chart, input, textarea, select')) { y0 = null; return; }
+      if (e.target.closest && e.target.closest('.chart, .gchart, input, textarea, select')) { y0 = null; return; }
       y0 = e.touches[0].clientY;
       dist = 0;
     }, { passive: true });

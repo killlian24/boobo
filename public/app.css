@@ -1216,21 +1216,21 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 #growth-measure-seg { margin-bottom: 12px; }
 
 .chart-wrap { margin: 0 -8px; }
-.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
-.chart text { fill: var(--text-2); font-size: 10px; font-family: var(--font); font-variant-numeric: tabular-nums; }
-.chart .grid line { stroke: var(--line); stroke-width: 1; }
-.chart .grid line.v { stroke-dasharray: 2 3; }
-.chart .grid .unit { font-weight: 600; }
-.chart .band { fill: var(--tint-n); }
-.chart .pline { fill: none; stroke: var(--text-2); stroke-opacity: 0.45; stroke-width: 1; }
-.chart .pline.median { stroke-opacity: 0.9; stroke-width: 1.5; }
-.chart .plabel { font-size: 9px; }
-.chart .target { fill: none; stroke: var(--ink-b); stroke-width: 1.5; stroke-dasharray: 5 4; }
-.chart .tlabel { fill: var(--ink-b); font-size: 9px; font-weight: 600; }
-.chart .now { stroke: var(--text-2); stroke-opacity: 0.35; stroke-width: 1; }
-.chart .series { fill: none; stroke: var(--ink-l); stroke-width: 2; stroke-linejoin: round; }
-.chart .pt { fill: var(--ink-l); stroke: var(--surface); stroke-width: 1.5; }
-.chart .pt.birth { fill: var(--surface); stroke: var(--ink-l); stroke-width: 2; }
+.gchart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gchart text { fill: var(--text-2); font-size: 10px; font-family: var(--font); font-variant-numeric: tabular-nums; }
+.gchart .grid line { stroke: var(--line); stroke-width: 1; }
+.gchart .grid line.v { stroke-dasharray: 2 3; }
+.gchart .grid .unit { font-weight: 600; }
+.gchart .band { fill: var(--tint-n); }
+.gchart .pline { fill: none; stroke: var(--text-2); stroke-opacity: 0.45; stroke-width: 1; }
+.gchart .pline.median { stroke-opacity: 0.9; stroke-width: 1.5; }
+.gchart .plabel { font-size: 9px; }
+.gchart .target { fill: none; stroke: var(--ink-b); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.gchart .tlabel { fill: var(--ink-b); font-size: 9px; font-weight: 600; }
+.gchart .now { stroke: var(--text-2); stroke-opacity: 0.35; stroke-width: 1; }
+.gchart .series { fill: none; stroke: var(--ink-l); stroke-width: 2; stroke-linejoin: round; }
+.gchart .pt { fill: var(--ink-l); stroke: var(--surface); stroke-width: 1.5; }
+.gchart .pt.birth { fill: var(--surface); stroke: var(--ink-l); stroke-width: 2; }
 .chart-empty { margin-top: 0; }
 #growth-chart-note { margin: 4px 8px 0; }
 .range-chips { margin: 12px 0 0; }

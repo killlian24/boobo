@@ -267,13 +267,14 @@ Rechenmodul `lib/growth.js` (reine Funktionen), Referenzdaten `growth/who.json` 
 - Tabelle `measurements`: `id`, `date` (`YYYY-MM-DD`, Ortszeit), `weight_g` INTEGER (300..30000), `length_cm` REAL
   (25..130), `hc_cm` REAL (18..60), `source` (`nurse` \| `doctor` \| `home` \| `hospital` \| null), `note`,
   `created_at`, `updated_at`. Mindestens ein Messwert. cm auf 0,1 gerundet.
-- Tabelle `growth_refs`: importierte Kurven (`id` TEXT PK, `data` JSON). Eingebaut: `who`, `de`. `dk` ist ein
-  Platzhalter (`available: false`), bis eine Kurve mit der Kennung `dk` importiert ist.
+- Tabelle `growth_refs`: importierte Kurven (`id` TEXT PK, `data` JSON). Eingebaut: `who`, `de`, `dk`
+  (`growth/*.json`). Fehlt `growth/dk.json`, ist `dk` ein Platzhalter (`available: false`) und importierbar.
 
 ## Rechnung
 - Alter in Tagen = `date` − `birth_date`. Geburt vor 37+0: korrigiertes Alter (Alter − (280 − Gestationstage)) bis
   730 Tage chronologisch; Kurvenpunkte und Perzentilen nutzen dann das korrigierte Alter.
-- LMS linear zwischen Tabellenzeilen interpoliert; z = ((x/M)^L − 1)/(L·S), bei |z| > 3 und L ≠ 1 WHO-Regel
+- LMS zwischen Tabellenzeilen monoton kubisch interpoliert (PCHIP, Fritsch-Carlson), wichtig für die dänischen
+  Tabellen mit Stützstellen alle 3 Monate; z = ((x/M)^L − 1)/(L·S), bei |z| > 3 und L ≠ 1 WHO-Regel
   (lineare Fortsetzung über den Abstand der 2- und 3-SD-Linie). Perzentile = Φ(z) × 100.
 - Die Geburtsdaten zählen als erste Messung (`id: "birth"`).
 - `gains`: aufeinanderfolgende Gewichte, `g_per_day`, `g_per_week`.
@@ -304,7 +305,7 @@ Nur mitgeschickte Felder werden geändert. `ref` muss eine verfügbare Kurve sei
 ### `GET /api/growth/refs` → `{ refs: [{ id, name, title, kind, description, source, builtin, available, measures,
 max_age_days, has_velocity, has_adult_height }] }`
 ### `POST /api/growth/refs` (Body bis 4 MB)
-`{ id?: "dk" | "<a-z0-9->", name?, csv?: "<Text>", data?: <Referenz-JSON>, age_unit?: days|weeks|months|years,
+`{ id?: "<a-z0-9->", name?, csv?: "<Text>", data?: <Referenz-JSON>, age_unit?: days|weeks|months|years,
 measure?: weight|length|hc, sex?: male|female, replace?: false }` → `201 { ref }`.
 CSV: Spalten Messgröße, Geschlecht, Alter (Kopfzeile bestimmt die Einheit: `age_days`, `age_weeks`, `age_months`,
 `age_years`, `alter`, `alder_mdr` …), `L`/`nu`, `M`/`mu`, `S`/`sigma`. Trenner Komma, Semikolon oder Tab; bei

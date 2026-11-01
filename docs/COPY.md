@@ -81,7 +81,7 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Zunahme | „+238 g pro Woche“ / „20. Okt. bis 30. Okt. · 10 Tage · +340 g“ · WHO: „0 bis 4 Wochen: +650 g“ / „P20 · Median 879 g (WHO)“ |
 | Zielgröße | „Tanner: 170 cm“ · „Hermanussen und Cole: 167,6 cm · P75“ · ohne Größen: „Tragt eure Größen in den Geburtsdaten ein, dann rechnet Boobo die Zielgröße.“ |
 | Kurve fehlt | „Die deutsche Kopfumfang-Kurve (KiGGS) beginnt erst mit 4 Monaten. Größeren Zeitraum wählen oder WHO nehmen.“ |
-| Import | „Kurve importieren“ · „Dänemark 2014“ / „Eigene Kurve“ · Toast „Dänemark importiert.“ + Messgrößen |
+| Import | „Kurve importieren“ · Hinweis „Für weitere Referenzen, z. B. aus der Schweiz oder für Frühgeborene. WHO, Deutschland und Dänemark sind schon eingebaut.“ · Toast „Meine Kurve importiert.“ + Messgrößen |
 
 ## Erweiterung 5: Statistik
 

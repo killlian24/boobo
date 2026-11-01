@@ -1268,7 +1268,7 @@ function createRefRegistry(repo, dir) {
     list() {
       const out = [...builtin.values()].map((r) => growth.refSummary(r));
       const imp = load();
-      if (!imp.has('dk')) out.push(growth.refSummary(growth.DK_PLACEHOLDER, false));
+      if (!builtin.has('dk') && !imp.has('dk')) out.push(growth.refSummary(growth.DK_PLACEHOLDER, false));
       for (const r of imp.values()) out.push(growth.refSummary(r));
       return out;
     },
