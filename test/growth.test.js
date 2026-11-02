@@ -165,8 +165,10 @@ describe('API /api/growth', () => {
     assert.equal(g.measurements[0].id, 'birth');
     assert.ok(g.latest.weight.p > 0 && g.latest.weight.p < 100);
     assert.equal(g.latest.weight.value, 4100);
-    assert.equal(g.gains.length, 3);
-    assert.equal(g.gains[0].diff_g, -250);
+    assert.equal(g.gains.length, 1, 'erst ab Wiedererreichen des Geburtsgewichts (Tag 11)');
+    assert.equal(g.gains[0].diff_g, 670);
+    assert.equal(g.gains[0].days, 17);
+    assert.equal(g.gains[0].g_per_week, 276);
     assert.equal(g.early.loss_pct, 7.4);
     assert.equal(g.early.regained_day, 11);
     assert.equal(g.velocity.length, 1, 'WHO 0-4 Wochen berechenbar');
@@ -241,5 +243,32 @@ describe('API /api/growth', () => {
     const after = (await ctx.api('GET', '/api/growth?ref=meine')).json;
     assert.equal(after.ref.id, 'who');
     assert.equal(after.ref_unavailable, 'meine');
+  });
+});
+
+describe('Zunahme pro Woche', () => {
+  const profile = { birth_date: '2026-10-28', birth_weight_g: 3948 };
+  const m = (id, date, weight_g) => ({ id, date, weight_g });
+  const run = (measurements, extra = {}) =>
+    growth.analyze({ profile: { ...profile, ...extra }, measurements, ref: null, todayYmd: '2026-11-30' }).gains;
+
+  test('keine Rate vor Wiedererreichen des Geburtsgewichts und unter 7 Tagen', () => {
+    assert.deepEqual(run([m(1, '2026-10-31', 3670), m(2, '2026-11-02', 3980)]), []);
+    assert.deepEqual(run([m(1, '2026-10-31', 3670)]), []);
+  });
+
+  test('ab Wiedererreichen, dichte Messungen zusammengefasst', () => {
+    const g = run([
+      m(1, '2026-10-31', 3670), m(2, '2026-11-02', 3980), m(3, '2026-11-06', 4100),
+      m(4, '2026-11-09', 4230), m(5, '2026-11-12', 4300),
+    ]);
+    assert.equal(g.length, 1);
+    assert.deepEqual([g[0].from, g[0].to, g[0].days, g[0].diff_g, g[0].g_per_week], ['2026-11-02', '2026-11-09', 7, 250, 250]);
+  });
+
+  test('ohne Gewichtsverlust ab Geburt, ohne Geburtsgewicht ab Tag 14', () => {
+    assert.equal(run([m(1, '2026-11-04', 4200)])[0].from, '2026-10-28');
+    const g = run([m(1, '2026-10-31', 3670), m(2, '2026-11-11', 4000), m(3, '2026-11-18', 4210)], { birth_weight_g: null });
+    assert.deepEqual([g.length, g[0].from, g[0].diff_g], [1, '2026-11-11', 210]);
   });
 });

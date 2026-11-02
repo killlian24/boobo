@@ -277,7 +277,9 @@ Rechenmodul `lib/growth.js` (reine Funktionen), Referenzdaten `growth/who.json` 
   Tabellen mit Stützstellen alle 3 Monate; z = ((x/M)^L − 1)/(L·S), bei |z| > 3 und L ≠ 1 WHO-Regel
   (lineare Fortsetzung über den Abstand der 2- und 3-SD-Linie). Perzentile = Φ(z) × 100.
 - Die Geburtsdaten zählen als erste Messung (`id: "birth"`).
-- `gains`: aufeinanderfolgende Gewichte, `g_per_day`, `g_per_week`.
+- `gains`: Zunahme zwischen Gewichten mit mindestens 7 Tagen Abstand (dichtere Messungen werden übersprungen),
+  `g_per_day`, `g_per_week`. Beginnt bei der Messung, an der das Geburtsgewicht wieder erreicht ist; ohne
+  Gewichtsverlust bei der Geburt, ohne Geburtsgewicht ab Tag 14. Solange das Geburtsgewicht nicht wieder erreicht ist: leer.
 - `early`: tiefstes Gewicht in den ersten 21 Tagen unter Geburtsgewicht, `loss_pct`, erster Tag mit Gewicht ≥
   Geburtsgewicht danach (`regained_day`).
 - `velocity` (nur WHO): Zunahme in den WHO-Intervallen (0–4 Wochen, 4 Wochen–2 Monate, dann monatlich bis 12 Monate).
