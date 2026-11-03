@@ -259,7 +259,7 @@
       </div>
       <div class="field">
         <span class="field-label" id="add-at-label">Zeitpunkt</span>
-        <div class="chips" id="add-chips" role="group" aria-label="Schnell zurückstellen">
+        <div class="chips time-chips" id="add-chips" role="group" aria-label="Schnell zurückstellen">
           <button type="button" class="chip" data-min="10" aria-pressed="false">vor 10 min</button>
           <button type="button" class="chip" data-min="20" aria-pressed="false">20 min</button>
           <button type="button" class="chip" data-min="30" aria-pressed="false">30 min</button>
@@ -395,10 +395,17 @@
           <button type="button" class="seg" data-value="dirty" aria-pressed="false">Voll</button>
         </div>
       </div>
-      <label class="field">
-        <span class="field-label">Zeitpunkt</span>
-        <input type="datetime-local" name="at" required>
-      </label>
+      <div class="field">
+        <span class="field-label" id="diaper-at-label">Zeitpunkt</span>
+        <div class="chips time-chips" id="diaper-chips" role="group" aria-label="Schnell zurückstellen">
+          <button type="button" class="chip" data-min="10" aria-pressed="false">vor 10 min</button>
+          <button type="button" class="chip" data-min="20" aria-pressed="false">20 min</button>
+          <button type="button" class="chip" data-min="30" aria-pressed="false">30 min</button>
+          <button type="button" class="chip" data-min="45" aria-pressed="false">45 min</button>
+          <button type="button" class="chip" data-min="60" aria-pressed="false">1 h</button>
+        </div>
+        <input type="datetime-local" name="at" required aria-labelledby="diaper-at-label">
+      </div>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
         <button type="submit" class="btn primary" id="btn-diaper-save">Speichern</button>
@@ -423,10 +430,17 @@
     <form method="dialog" id="form-intake">
       <h2 id="intake-title">Einnahme</h2>
       <p id="intake-med" class="dlg-sub"></p>
-      <label class="field">
-        <span class="field-label">Zeitpunkt</span>
-        <input type="datetime-local" name="at" required>
-      </label>
+      <div class="field">
+        <span class="field-label" id="intake-at-label">Zeitpunkt</span>
+        <div class="chips time-chips" id="intake-chips" role="group" aria-label="Schnell zurückstellen">
+          <button type="button" class="chip" data-min="10" aria-pressed="false">vor 10 min</button>
+          <button type="button" class="chip" data-min="20" aria-pressed="false">20 min</button>
+          <button type="button" class="chip" data-min="30" aria-pressed="false">30 min</button>
+          <button type="button" class="chip" data-min="45" aria-pressed="false">45 min</button>
+          <button type="button" class="chip" data-min="60" aria-pressed="false">1 h</button>
+        </div>
+        <input type="datetime-local" name="at" required aria-labelledby="intake-at-label">
+      </div>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
         <button type="submit" class="btn primary" id="btn-intake-save">Speichern</button>

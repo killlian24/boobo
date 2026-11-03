@@ -867,29 +867,37 @@
     form.at.value = toLocalInputValue(now);
     form.at.max = toLocalInputValue(new Date(now.getTime() + 5 * 60000));
     form.note.value = '';
-    setChip(null);
+    setChip($('#add-chips'), null);
     var pick = SIDE_NAMES[side] ? side : ((state.state && state.state.suggested_side) || 'left');
     segSet($('.segmented', form), pick);
     openDialog(dlg);
   }
 
-  function setChip(minutes) {
-    $$('#add-chips .chip').forEach(function (c) {
+  // Schnellwahl „vor 10 min“ usw. in allen Nachtragen-Dialogen (.time-chips im selben Formular wie das Feld at)
+  function setChip(box, minutes) {
+    $$('.chip', box).forEach(function (c) {
       c.setAttribute('aria-pressed', String(c.getAttribute('data-min')) === String(minutes) ? 'true' : 'false');
     });
   }
 
+  function showTimeChips(box, show) {
+    box.hidden = !show;
+    setChip(box, null);
+  }
+
   function initChips() {
-    var form = $('#form-add');
-    $('#add-chips').addEventListener('click', function (e) {
-      var c = e.target.closest('.chip');
-      if (!c) return;
-      var min = parseInt(c.getAttribute('data-min'), 10);
-      if (isNaN(min)) return;
-      form.at.value = toLocalInputValue(new Date(Date.now() - min * 60000));
-      setChip(min);
+    $$('.time-chips').forEach(function (box) {
+      var form = box.closest('form');
+      box.addEventListener('click', function (e) {
+        var c = e.target.closest('.chip');
+        if (!c) return;
+        var min = parseInt(c.getAttribute('data-min'), 10);
+        if (isNaN(min)) return;
+        form.at.value = toLocalInputValue(new Date(Date.now() - min * 60000));
+        setChip(box, min);
+      });
+      form.at.addEventListener('input', function () { setChip(box, null); });
     });
-    form.at.addEventListener('input', function () { setChip(null); });
   }
 
   function submitAdd(e) {
@@ -1135,6 +1143,7 @@
     $('#diaper-title').textContent = isNew ? 'Windel nachtragen' : 'Windel';
     $('#btn-diaper-save').textContent = isNew ? 'Notieren' : 'Speichern';
     $('#btn-diaper-delete').hidden = isNew;
+    showTimeChips($('#diaper-chips'), isNew);
     openDialog($('#dlg-diaper'));
   }
 
@@ -1292,6 +1301,7 @@
     form.at.value = toLocalInputValue(toDate(it.at) || new Date());
     $('#btn-intake-save').textContent = 'Speichern';
     $('#btn-intake-delete').hidden = false;
+    showTimeChips($('#intake-chips'), false);
     openIntakeDialog();
   }
 
@@ -1304,6 +1314,7 @@
     form.at.value = toLocalInputValue(new Date());
     $('#btn-intake-save').textContent = 'Notieren';
     $('#btn-intake-delete').hidden = true;
+    showTimeChips($('#intake-chips'), true);
     openIntakeDialog();
   }
 
