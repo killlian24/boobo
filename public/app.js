@@ -1123,37 +1123,66 @@
     }, true);
   }
 
-  // ---------- Windel bearbeiten ----------
+  // ---------- Windel bearbeiten / nachtragen ----------
+  // editingDiaper: vorhandene Windel (Bearbeiten) oder null (Nachtragen)
 
   var editingDiaper = null;
-  function openDiaperEdit(w) {
-    editingDiaper = w;
+  function openDiaperDialog(kind, d, isNew) {
     var form = $('#form-diaper');
-    var d = toDate(w.at) || new Date();
     form.at.value = toLocalInputValue(d);
     form.at.max = toLocalInputValue(new Date(Date.now() + 5 * 60000));
-    segSet($('.segmented', form), w.kind === 'dirty' ? 'dirty' : 'wet');
+    segSet($('.segmented', form), kind === 'dirty' ? 'dirty' : 'wet');
+    $('#diaper-title').textContent = isNew ? 'Windel nachtragen' : 'Windel';
+    $('#btn-diaper-save').textContent = isNew ? 'Notieren' : 'Speichern';
+    $('#btn-diaper-delete').hidden = isNew;
     openDialog($('#dlg-diaper'));
+  }
+
+  function openDiaperEdit(w) {
+    editingDiaper = w;
+    openDiaperDialog(w.kind, toDate(w.at) || new Date(), false);
+  }
+
+  function openDiaperNew(kind) {
+    editingDiaper = null;
+    openDiaperDialog(kind, new Date(), true);
   }
 
   function submitDiaper(e) {
     e.preventDefault();
-    if (!editingDiaper) return;
     var form = $('#form-diaper');
     var kind = segGet($('.segmented', form));
     var atIso = fromLocalInputValue(form.at.value);
     if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
-    var patch = {};
-    if (kind && kind !== editingDiaper.kind) patch.kind = kind;
-    if (form.at.value !== toLocalInputValue(new Date(editingDiaper.at))) patch.at = atIso;
-    if (!Object.keys(patch).length) { closeDialog($('#dlg-diaper')); return; }
-    var submit = $('button[type=submit]', form);
-    submit.disabled = true;
-    api('PATCH', '/api/diapers/' + editingDiaper.id, patch).then(function () {
-      closeDialog($('#dlg-diaper'));
-      showToast('Gespeichert.', { duration: 3000 });
-      return refresh();
-    }).catch(function (err) {
+    var submit = $('#btn-diaper-save');
+    var done;
+    if (editingDiaper) {
+      var patch = {};
+      if (kind && kind !== editingDiaper.kind) patch.kind = kind;
+      if (form.at.value !== toLocalInputValue(new Date(editingDiaper.at))) patch.at = atIso;
+      if (!Object.keys(patch).length) { closeDialog($('#dlg-diaper')); return; }
+      submit.disabled = true;
+      done = api('PATCH', '/api/diapers/' + editingDiaper.id, patch).then(function () {
+        closeDialog($('#dlg-diaper'));
+        showToast('Gespeichert.', { duration: 3000 });
+        return refresh();
+      });
+    } else {
+      kind = kind === 'dirty' ? 'dirty' : 'wet';
+      submit.disabled = true;
+      done = api('POST', '/api/diapers', { kind: kind, at: atIso }).then(function (res) {
+        closeDialog($('#dlg-diaper'));
+        var diaper = res && res.diaper;
+        var at = diaper ? toDate(diaper.at) : null;
+        return refresh().then(function () {
+          showToast(DIAPER_NAMES[kind] + ', ' + (at ? dayPrefix(at, new Date()) + fmtTime.format(at) : '') + '. Notiert.', {
+            sub: DIAPER_TOAST_SUB[kind],
+            action: diaper ? function () { undoDelete('/api/diapers/' + diaper.id); } : null
+          });
+        });
+      });
+    }
+    done.catch(function (err) {
       showToast(errorText(err), { error: true, duration: 6000 });
     }).then(function () { submit.disabled = false; });
   }
@@ -2898,7 +2927,7 @@
     });
     $$('.diaper-btn').forEach(function (b) {
       b.addEventListener('click', function () { quickDiaper(b.getAttribute('data-kind')); });
-      b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      initLongPress(b, function () { if (!state.busy) openDiaperNew(b.getAttribute('data-kind')); });
     });
     $('#btn-backfill').addEventListener('click', function () { openAdd(); });
     $('#btn-intakes').addEventListener('click', openIntakes);

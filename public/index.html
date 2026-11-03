@@ -384,10 +384,10 @@
     </form>
   </dialog>
 
-  <!-- Windel bearbeiten -->
+  <!-- Windel bearbeiten / nachtragen -->
   <dialog id="dlg-diaper" class="sheet">
     <form method="dialog" id="form-diaper">
-      <h2>Windel</h2>
+      <h2 id="diaper-title">Windel</h2>
       <div class="field">
         <span class="field-label">Wie war sie?</span>
         <div class="segmented two neutral" role="radiogroup" data-name="kind">
@@ -401,7 +401,7 @@
       </label>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
-        <button type="submit" class="btn primary">Speichern</button>
+        <button type="submit" class="btn primary" id="btn-diaper-save">Speichern</button>
       </div>
       <button type="button" class="btn danger-ghost full" id="btn-diaper-delete">Löschen</button>
     </form>
