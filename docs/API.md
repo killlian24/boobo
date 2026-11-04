@@ -194,6 +194,10 @@ Zusätzlich in `GET /api/state` (für Home Assistant, nur **aktive** Medikamente
 - **Windeln:** Unter den vier Still-Buttons eine kleinere Reihe mit zwei Buttons „Nass“ und „Voll“ (56 px hoch), ein Tipp
   = `POST /api/diapers` jetzt, Toast mit Rückgängig (→ DELETE). Windeln erscheinen im Verlauf „Bisher“ chronologisch
   zwischen den Still-Einträgen (eigene Zeile mit Tropfen-Symbol, Tippen → Zeit ändern/löschen).
+- **Verlauf „Bisher“:** Start mit je 30 Still-Einträgen/Windeln (`limit=31`, der eine mehr verrät, ob es Älteres gibt).
+  Heute und Gestern aufgeklappt, ältere Tage als Tageszeile mit Summe („8 Mal · 4 Windeln“), Tippen klappt auf/zu.
+  „Frühere Tage laden“ holt je Liste 100 weitere über `before=<ältestes at>`; der Refresh fragt dann so viele Einträge
+  an, wie geladen sind (höchstens 500), damit nachgeladene Tage nicht wieder verschwinden.
 - **Medikamente:** Karte „Für Mama“ zwischen Windeln und Tagesbilanz, nur aktive Medikamente. Pro Zeile: Name + Dosis,
   Statuszeile, Button „Genommen“. Statustexte: noch nie → „Noch nichts genommen“; möglich → „Geht wieder · zuletzt 12:10“
   (bzw. „Geht jetzt“ wenn `due`); noch nicht → „Wieder ab 16:30 · 2 von 4“; `remaining_24h === 0` → „Für heute komplett · 4 von 4“.

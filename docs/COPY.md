@@ -56,6 +56,8 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Doppelschutz ohne Uhrzeit (Fallback) | „Gerade eben schon notiert.“ · „Trotzdem eintragen?“ |
 | Uhrzeit an einem anderen Tag | Präfix „gestern “ / „morgen “, z. B. „Wieder ab morgen 02:44 · 1 von 4“, „Eigentlich erst ab morgen 02:44.“ |
 | Verlauf Tageskopf | „7 Mal · 2 Windeln“ (Windeln nur wenn vorhanden, „1 Windel“) |
+| Verlauf Tageszeile (älter als Gestern, zugeklappt) | „Donnerstag, 29.10.“ + „8 Mal · 4 Windeln“, Pfeil rechts; angeschnittener ältester Tag mit „…“ |
+| Verlauf nachladen | Button „Frühere Tage laden“, während des Ladens „Lädt …“; verschwindet, wenn nichts Älteres mehr da ist |
 | Windel bearbeiten | Titel „Windel“ · Feld „Wie war sie?“ · Nass / Voll · Rückfrage „Windel löschen?“ („Ja, löschen“ / „Behalten“) |
 | Alle Einnahmen | Titel „Alle Einnahmen“ · leer: „Hier stehen später Mamas Einnahmen.“ · Zeile antippen öffnet „Einnahme“ |
 | Einnahme bearbeiten | Titel „Einnahme“ · Unterzeile „Paracetamol 1 g“ · Feld „Zeitpunkt“ · „Abbrechen“ / „Speichern“ · „Löschen“ → Rückfrage „Einnahme löschen?“ + „Paracetamol 1 g, 14:32“ („Ja, löschen“ / „Behalten“) |

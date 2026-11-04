@@ -444,6 +444,32 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   font-weight: 700;
 }
 .day-head .count { color: var(--text-2); font-weight: 400; font-size: 0.9375rem; }
+/* Tageszeile als Auf-/Zuklapper: Heute und Gestern offen, ältere Tage zugeklappt */
+.day-toggle {
+  width: 100%;
+  height: 44px;
+  margin: -8px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  gap: 8px;
+}
+.day-toggle:active { opacity: 0.6; }
+.day-toggle .day-name { flex: 1 1 auto; min-width: 0; }
+.day-toggle .count { flex: 0 0 auto; white-space: nowrap; }
+.day-toggle .chev {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-2);
+  transition: transform 0.15s ease;
+}
+.day-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.day.collapsed + .day { margin-top: 12px; }
+.day .day-list { margin-top: 8px; }
+.history-more { margin-top: 20px; }
 .day-list { list-style: none; margin: 0; padding: 0; }
 .row {
   width: 100%;

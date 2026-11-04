@@ -8,7 +8,9 @@
   var TOAST_MS = 10000;
   var LONG_PRESS_MS = 500;
   var LONG_PRESS_MOVE_PX = 10;
-  var HISTORY_LIMIT = 100;
+  var HISTORY_LIMIT = 30;       // Still-Einträge bzw. Windeln beim Start (≈ Heute und Gestern)
+  var HISTORY_PAGE = 100;       // pro „Frühere Tage laden“
+  var HISTORY_LIMIT_MAX = 500;  // Obergrenze des Servers pro Anfrage
   var LS_THEME = 'boobo.theme';
   var LS_NIGHT = 'boobo.night';
 
@@ -19,6 +21,11 @@
 
   // diapers/meds: null = Endpunkt (noch) nicht verfügbar → Abschnitt ausblenden
   var state = { state: null, feeds: [], diapers: [], meds: null, busy: false, online: true };
+  // „Bisher“: feedsEnd/diapersEnd = Server hat nichts Älteres mehr; historyOpen = von Hand auf-/zugeklappte Tage
+  state.feedsEnd = false;
+  state.diapersEnd = false;
+  state.historyOpen = {};
+  state.historyLoading = false;
   var medBusy = {};
 
   var DROP_PATH = 'M12 3.5C9.6 7 6.5 10.6 6.5 14.3a5.5 5.5 0 0 0 11 0c0-3.7-3.1-7.3-5.5-10.8Z';
@@ -26,6 +33,7 @@
   var fmtTime = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
   var fmtDate = new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
   var fmtDateLong = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  var fmtDateNumeric = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' });
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -132,6 +140,14 @@
     return sameYear ? fmtDateLong.format(date) : fmtDate.format(date) + ' ' + date.getFullYear();
   }
 
+  // Kurzform für die Tageszeile in „Bisher“ („Donnerstag, 29.10.“), damit Zahl und Pfeil daneben Platz haben
+  function dayLabelShort(date, now) {
+    var label = dayLabel(date, now);
+    if (label === 'Heute' || label === 'Gestern') return label;
+    var sameYear = date.getFullYear() === now.getFullYear();
+    return fmtDateNumeric.format(date) + (sameYear ? '' : date.getFullYear());
+  }
+
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -181,22 +197,42 @@
 
   var refreshing = null;
   var refreshAgain = false;
+  var historyGen = 0;               // zählt nachgeladene Seiten von „Frühere Tage laden“
+  var historyRefreshPending = false; // Refresh hat die Listen ausgelassen → nachholen
   function refresh() {
     if (refreshing) {
       // Läuft bereits – danach noch einmal laden, damit keine veralteten Daten gewinnen
       refreshAgain = true;
       return refreshing.then(function () { return refreshing || Promise.resolve(); });
     }
+    // So viel nachladen, wie gerade sichtbar ist – nachgeladene frühere Tage bleiben so erhalten.
+    // Ein Eintrag mehr als gezeigt verrät, ob es noch Älteres gibt; der wird danach abgeschnitten.
+    var feedLimit = historyRefreshLimit(state.feeds);
+    var diaperLimit = historyRefreshLimit(state.diapers);
+    var feedReq = Math.min(HISTORY_LIMIT_MAX, feedLimit + 1);
+    var diaperReq = Math.min(HISTORY_LIMIT_MAX, diaperLimit + 1);
+    var gen = historyGen;
     refreshing = Promise.all([
       api('GET', '/api/state'),
-      api('GET', '/api/feeds?limit=' + HISTORY_LIMIT),
+      api('GET', '/api/feeds?limit=' + feedReq),
       // Neue Endpunkte defensiv: fehlen sie, bleibt der Rest der App heil
-      api('GET', '/api/diapers?limit=' + HISTORY_LIMIT).catch(optionalFailure),
+      api('GET', '/api/diapers?limit=' + diaperReq).catch(optionalFailure),
       api('GET', '/api/medications').catch(optionalFailure)
     ]).then(function (res) {
       state.state = res[0];
-      state.feeds = (res[1] && Array.isArray(res[1].feeds)) ? res[1].feeds : [];
-      applyOptional('diapers', res[2], 'diapers');
+      if (state.historyLoading || gen !== historyGen) {
+        // „Frühere Tage laden“ kam dazwischen – die kürzere Antwort würde die Liste wieder stutzen
+        historyRefreshPending = true;
+      } else {
+        var feeds = (res[1] && Array.isArray(res[1].feeds)) ? res[1].feeds : [];
+        state.feedsEnd = feeds.length < feedReq;
+        state.feeds = feeds.slice(0, feedLimit);
+        applyOptional('diapers', res[2], 'diapers');
+        if (res[2] !== KEEP) {
+          state.diapersEnd = !state.diapers || state.diapers.length < diaperReq;
+          if (state.diapers) state.diapers = state.diapers.slice(0, diaperLimit);
+        }
+      }
       applyOptional('meds', res[3], 'medications');
       setOnline(true);
       render();
@@ -207,9 +243,14 @@
       console.warn('refresh failed', err);
     }).then(function () {
       refreshing = null;
-      if (refreshAgain) { refreshAgain = false; return refresh(); }
+      if (historyRefreshPending && !state.historyLoading) refreshAgain = true;
+      if (refreshAgain) { refreshAgain = false; historyRefreshPending = false; return refresh(); }
     });
     return refreshing;
+  }
+
+  function historyRefreshLimit(list) {
+    return Math.min(HISTORY_LIMIT_MAX, Math.max(HISTORY_LIMIT, (list || []).length));
   }
 
   var KEEP = {};
@@ -352,14 +393,14 @@
     });
   }
 
-  // Still-Einträge und Windeln chronologisch gemischt. Beide Listen sind auf HISTORY_LIMIT begrenzt;
-  // damit keine Lücke entsteht, nur bis zum älteren der beiden „abgeschnittenen“ Enden zeigen.
+  // Still-Einträge und Windeln chronologisch gemischt. Beide Listen sind seitenweise geladen;
+  // damit keine Lücke entsteht, nur bis zum jüngeren der beiden „abgeschnittenen“ Enden zeigen.
   function historyItems() {
     var feeds = state.feeds || [];
     var diapers = state.diapers || [];
     var cutoff = -Infinity;
-    if (feeds.length >= HISTORY_LIMIT) cutoff = Math.max(cutoff, new Date(feeds[feeds.length - 1].at).getTime());
-    if (diapers.length >= HISTORY_LIMIT) cutoff = Math.max(cutoff, new Date(diapers[diapers.length - 1].at).getTime());
+    if (!state.feedsEnd && feeds.length) cutoff = Math.max(cutoff, new Date(feeds[feeds.length - 1].at).getTime());
+    if (!state.diapersEnd && diapers.length) cutoff = Math.max(cutoff, new Date(diapers[diapers.length - 1].at).getTime());
 
     var items = [];
     // Abstand „2 h 50 später“ nur zwischen Still-Einträgen: zum nächstälteren Still-Eintrag
@@ -392,32 +433,114 @@
       return;
     }
     var now = new Date();
+    var yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    var recentKeys = {};
+    recentKeys[dayKey(now)] = true;
+    recentKeys[dayKey(yesterday)] = true;
+    var moreAvailable = !(state.feedsEnd && state.diapersEnd);
+
     var groups = [];
     var map = {};
     items.forEach(function (it) {
       var k = dayKey(it.date);
       if (!map[k]) {
-        map[k] = { key: k, label: dayLabel(it.date, now), items: [], feeds: 0, diapers: 0 };
+        map[k] = { key: k, label: dayLabel(it.date, now), shortLabel: dayLabelShort(it.date, now), items: [], feeds: 0, diapers: 0 };
         groups.push(map[k]);
       }
       map[k].items.push(it);
       if (it.type === 'feed') map[k].feeds++; else map[k].diapers++;
     });
 
-    groups.forEach(function (g) {
+    groups.forEach(function (g, gi) {
+      // Heute und Gestern offen, ältere Tage zugeklappt – es sei denn, jemand hat getippt
+      var open = Object.prototype.hasOwnProperty.call(state.historyOpen, g.key)
+        ? state.historyOpen[g.key] : !!recentKeys[g.key];
+      // Der älteste geladene Tag ist meist angeschnitten, solange es noch Früheres gibt
+      var incomplete = moreAvailable && gi === groups.length - 1;
       var parts = [];
       if (g.feeds) parts.push(g.feeds + ' Mal');
       if (g.diapers) parts.push(plural(g.diapers, 'Windel', 'Windeln'));
-      var head = el('div', { class: 'day-head' }, [
-        el('span', { text: g.label }),
-        el('span', { class: 'count', text: parts.join(' · ') })
+      var countText = parts.join(' · ') + (incomplete ? ' …' : '');
+      var chev = el('span', { class: 'chev', 'aria-hidden': 'true' });
+      chev.appendChild(chevronSvg());
+      var head = el('button', {
+        class: 'day-head day-toggle', type: 'button',
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-label': g.label + ', ' + countText + (open ? ' – zuklappen' : ' – aufklappen')
+      }, [
+        el('span', { class: 'day-name', text: g.shortLabel }),
+        el('span', { class: 'count', text: countText }),
+        chev
       ]);
+      head.addEventListener('click', function () {
+        state.historyOpen[g.key] = !open;
+        renderHistory();
+      });
       var list = el('ul', { class: 'day-list' });
+      list.hidden = !open;
       g.items.forEach(function (it) {
         list.appendChild(el('li', null, [it.type === 'feed' ? feedRow(it) : diaperRow(it)]));
       });
-      root.appendChild(el('section', { class: 'day' }, [head, list]));
+      root.appendChild(el('section', { class: 'day' + (open ? '' : ' collapsed') }, [head, list]));
     });
+
+    if (moreAvailable) {
+      var more = el('button', {
+        class: 'secondary-btn history-more', type: 'button',
+        text: state.historyLoading ? 'Lädt …' : 'Frühere Tage laden'
+      });
+      more.disabled = state.historyLoading;
+      more.addEventListener('click', loadMoreHistory);
+      root.appendChild(more);
+    }
+  }
+
+  // Nächste Seite älterer Einträge holen (je Liste ab ihrem ältesten geladenen Eintrag) und anhängen
+  function loadMoreHistory() {
+    if (state.historyLoading) return;
+    state.historyLoading = true;
+    renderHistory();
+    function pageUrl(path, list) {
+      var oldest = list[list.length - 1];
+      return path + '?limit=' + HISTORY_PAGE + '&before=' + encodeURIComponent(oldest.at);
+    }
+    var feeds = state.feeds || [];
+    var diapers = state.diapers || [];
+    var wantFeeds = !state.feedsEnd && feeds.length > 0;
+    var wantDiapers = !state.diapersEnd && diapers.length > 0;
+    return Promise.all([
+      wantFeeds ? api('GET', pageUrl('/api/feeds', feeds)) : Promise.resolve(null),
+      wantDiapers ? api('GET', pageUrl('/api/diapers', diapers)) : Promise.resolve(null)
+    ]).then(function (res) {
+      historyGen++;
+      if (wantFeeds) {
+        var moreFeeds = (res[0] && Array.isArray(res[0].feeds)) ? res[0].feeds : [];
+        state.feeds = appendUnique(state.feeds || [], moreFeeds);
+        if (moreFeeds.length < HISTORY_PAGE) state.feedsEnd = true;
+      } else {
+        state.feedsEnd = true;
+      }
+      if (wantDiapers) {
+        var moreDiapers = (res[1] && Array.isArray(res[1].diapers)) ? res[1].diapers : [];
+        state.diapers = appendUnique(state.diapers || [], moreDiapers);
+        if (moreDiapers.length < HISTORY_PAGE) state.diapersEnd = true;
+      } else {
+        state.diapersEnd = true;
+      }
+    }).catch(function (err) {
+      showToast(errorText(err));
+    }).then(function () {
+      state.historyLoading = false;
+      renderHistory();
+      // Ein Refresh, der währenddessen lief, hat die Listen ausgelassen → jetzt nachholen
+      if (historyRefreshPending && !refreshing) { historyRefreshPending = false; refresh(); }
+    });
+  }
+
+  function appendUnique(list, more) {
+    var seen = {};
+    list.forEach(function (x) { seen[x.id] = true; });
+    return list.concat(more.filter(function (x) { return !seen[x.id]; }));
   }
 
   function feedRow(it) {
