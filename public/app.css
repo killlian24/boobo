@@ -130,7 +130,7 @@
 
   --toast: #2C2624;
   --toast-text: #D9D2C8;
-  --toast-text-2: #8E867C;
+  --toast-text-2: #9A9288;   /* 4,85:1 auf --toast (WCAG AA ab 4,5:1) */
   --toast-action: #C98E9D;
 
   --shadow: none;

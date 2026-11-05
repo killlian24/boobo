@@ -105,6 +105,15 @@ describe('lib/growth: LMS-Rechnung gegen WHO-Tabellen', () => {
     assert.deepEqual(r.measures.weight.male[1], [30.44, 0.3, 4.6, 0.13]);
     assert.throws(() => growth.parseCsvRef('a,b\n1,2\n3,4'), /Spalte/);
   });
+
+  test('CSV-Import: Semikolon mit Dezimalpunkt bleibt Dezimalpunkt, gemischt wird abgelehnt', () => {
+    const r = growth.parseCsvRef('measure;sex;age_days;L;M;S\nweight;male;0;1;3.3;0.1\nweight;male;30;1;4.2;0.1');
+    assert.deepEqual(r.measures.weight.male[0], [0, 1, 3.3, 0.1]);
+    assert.throws(
+      () => growth.parseCsvRef('measure;sex;age_days;L;M;S\nweight;male;0;1;3,3;0.1\nweight;male;30;1;4,2;0,1'),
+      /uneindeutig.*Zeile 2/,
+    );
+  });
 });
 
 describe('API /api/growth', () => {
@@ -246,6 +255,20 @@ describe('API /api/growth', () => {
   });
 });
 
+describe('Datumsgrenzen', () => {
+  let ctx;
+  before(async () => { ctx = await startApp(); });
+  after(() => ctx.stop());
+
+  test('morgen ist kein gültiges Mess- oder Geburtsdatum, heute schon', async () => {
+    const tomorrow = ymd(-1);
+    assert.equal((await ctx.api('POST', '/api/growth/measurements', { date: tomorrow, weight_g: 4000 })).status, 400);
+    assert.equal((await ctx.api('PATCH', '/api/growth/profile', { birth_date: tomorrow })).status, 400);
+    const today = await ctx.api('POST', '/api/growth/measurements', { date: ymd(0), weight_g: 4000 });
+    assert.equal(today.status, 201);
+  });
+});
+
 describe('Zunahme pro Woche', () => {
   const profile = { birth_date: '2026-10-28', birth_weight_g: 3948 };
   const m = (id, date, weight_g) => ({ id, date, weight_g });
@@ -264,6 +287,20 @@ describe('Zunahme pro Woche', () => {
     ]);
     assert.equal(g.length, 1);
     assert.deepEqual([g[0].from, g[0].to, g[0].days, g[0].diff_g, g[0].g_per_week], ['2026-11-02', '2026-11-09', 7, 250, 250]);
+  });
+
+  test('erste Messung erst nach Tag 21 und unter Geburtsgewicht: keine Rate vor dem Wiedererreichen', () => {
+    // Geburt 3948 g; Tag 25: 3300 g (unter Geburtsgewicht), Tag 33: 3400 g, Tag 42: 4000 g (wieder erreicht), Tag 49: 4200 g
+    const a = growth.analyze({
+      profile, ref: null, todayYmd: '2026-12-30',
+      measurements: [m(1, '2026-11-22', 3300), m(2, '2026-11-30', 3400), m(3, '2026-12-09', 4000), m(4, '2026-12-16', 4200)],
+    });
+    assert.equal(a.early.lowest_g, null);
+    assert.equal(a.early.early_measured, false);
+    assert.equal(a.early.regained_day, 42);
+    assert.deepEqual(a.gains.map((g) => [g.from, g.to, g.diff_g]), [['2026-12-09', '2026-12-16', 200]]);
+    // Alle Messungen unter dem Geburtsgewicht → noch keine Rate
+    assert.deepEqual(run([m(1, '2026-11-22', 3300), m(2, '2026-11-30', 3400)]), []);
   });
 
   test('ohne Gewichtsverlust ab Geburt, ohne Geburtsgewicht ab Tag 14', () => {

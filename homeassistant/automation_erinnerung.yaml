@@ -18,7 +18,7 @@
 # Dann gibt es nachts keine Benachrichtigung – beim Stillen im Halbschlaf oft erwünscht.
 
 alias: "Boobo: Bobo hat bald Hunger"
-description: "Benachrichtigt beide Eltern, wenn seit dem letzten Stillen mehr als das eingestellte Intervall (Standard 3 h) vergangen ist."
+description: "Benachrichtigt beide Eltern, wenn seit dem letzten Stillen mehr als das eingestellte Abstand (Standard 3 h) vergangen ist."
 mode: single
 
 triggers:

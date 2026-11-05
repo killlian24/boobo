@@ -17,7 +17,7 @@ Dateien in diesem Ordner:
 | `automation_medikamente.yaml` | „Kurz an dich denken“: Mama Bescheid sagen, wenn ein Medikament wieder genommen werden darf |
 | `rest_commands.yaml` | `rest_command.boobo_stillen` / `boobo_loeschen` / `boobo_windel` / `boobo_medikament` |
 | `scripts.yaml` | Skripte Links/Rechts/Beide/Flasche, „Seite, die dran ist“, Rückgängig, Windel nass/voll, Medikament genommen |
-| `input_text.yaml` | Helfer, der die ID des letzten HA-Eintrags für „Rückgängig“ merkt |
+| `input_text.yaml` | Helfer, der die ID des zuletzt aus HA Notierten für „Rückgängig“ merkt |
 | `automation_taster.yaml` | Beispiel: Zigbee-Taster, 1× = Seite die dran ist, 2× = Flasche, lang = Rückgängig |
 
 
@@ -63,7 +63,7 @@ Skripte erscheinen bei Google als **Szenen** und werden mit „Hey Google, aktiv
        script.boobo_windel_nass: { expose: true, name: Windel nass }
        script.boobo_windel_voll: { expose: true, name: Windel voll }
        script.boobo_rueckgaengig: { expose: true, name: Bobo rückgängig }
-       script.boobo_ansage:   { expose: true, name: Bobo Status, aliases: [Bobo Bericht] }
+       script.boobo_ansage:   { expose: true, name: Bobo Bericht }
        script.boobo_mama_ansage: { expose: true, name: Mama Medikamente }
        script.boobo_paracetamol: { expose: true, name: Paracetamol genommen }
        script.boobo_ibuprofen:   { expose: true, name: Ibuprofen genommen }
@@ -71,7 +71,7 @@ Skripte erscheinen bei Google als **Szenen** und werden mit „Hey Google, aktiv
    ```
 2. Home Assistant neu starten, dann Entwicklerwerkzeuge → Aktionen → `google_assistant.request_sync` ausführen
    (oder „Hey Google, synchronisiere meine Geräte“).
-3. Sprechen: „Hey Google, aktiviere Bobo links“, „… aktiviere Windel nass“, „… aktiviere Bobo Status“.
+3. Sprechen: „Hey Google, aktiviere Bobo links“, „… aktiviere Windel nass“, „… aktiviere Bobo Bericht“.
 4. Natürlichere Sätze über **Routinen in der Google-Home-App** (Automatisierungen → Neu → Starter „Wenn ich sage“):
    | Sagen | Aktion in der Routine |
    |---|---|
@@ -79,7 +79,7 @@ Skripte erscheinen bei Google als **Szenen** und werden mit „Hey Google, aktiv
    | „Bobo hat rechts getrunken“ | Szene „Bobo rechts“ |
    | „Bobo hatte die Flasche“ | Szene „Bobo Flasche“ |
    | „Windel war nass“ / „Windel war voll“ | Szene „Windel nass“ / „Windel voll“ |
-   | „Wann hat Bobo getrunken?“ | Szene „Bobo Status“ (der Lautsprecher antwortet) |
+   | „Wann hat Bobo getrunken?“ | Szene „Bobo Bericht“ (der Lautsprecher antwortet) |
    | „Ich habe Paracetamol genommen“ | Szene „Paracetamol genommen“ |
    | „Was darf ich nehmen?“ | Szene „Mama Medikamente“ |
 
@@ -120,7 +120,7 @@ Danach: **Entwicklerwerkzeuge → YAML → Konfiguration prüfen**, anschließen
 
 | Name | Entity-ID | Inhalt |
 |---|---|---|
-| Boobo Status | `sensor.boobo_status` | Text `ok` / `Bobo hat Hunger` / `keine Daten`, alle Rohwerte als Attribute (u. a. `summary_24h`, `medications`, `medications_due` aus `/api/state`, siehe `docs/API.md`) |
+| Boobo Überblick | `sensor.boobo_status` | Text `ok` / `Bobo hat Hunger` / `keine Daten`, alle Rohwerte als Attribute (u. a. `summary_24h`, `medications`, `medications_due` aus `/api/state`, siehe `docs/API.md`) |
 | Boobo Minuten seit Stillen | `sensor.boobo_minuten_seit_stillen` | Minuten |
 | Boobo letzte Seite | `sensor.boobo_letzte_seite` | Links / Rechts / Beide / Flasche / – |
 | Boobo letztes Stillen | `sensor.boobo_letztes_stillen` | Zeitstempel |
@@ -144,7 +144,12 @@ umbenennen, sonst bleiben die alten IDs bestehen und Skripte, Automationen und K
 
 Prüfen unter **Entwicklerwerkzeuge → Zustände**, Filter `boobo`.
 
-Hinweis: Solange noch kein Eintrag in Boobo existiert (`last` ist `null`), sind die zeitbezogenen
+Hinweis zu den Namen: Die Entity-IDs bleiben, wie sie sind (z. B. `sensor.boobo_status`). Weil die Sensoren eine `unique_id`
+haben, ändert Home Assistant sie auch dann nicht, wenn nur der Anzeigename angepasst wird. Wer die alten Namen noch sieht,
+benennt sie unter Einstellungen → Geräte & Dienste → Entitäten um. Der Helfer `input_text.boobo_letzter_eintrag` hat keine
+`unique_id`; sein Name kommt aus `input_text.yaml`, die ID aus dem Schlüssel.
+
+Hinweis: Solange in Boobo noch nichts notiert ist (`last` ist `null`), sind die zeitbezogenen
 Sensoren `unavailable` – das ist Absicht und verschwindet nach dem ersten Stillen.
 
 ## 3. Notify-Dienste der Handys finden
@@ -210,10 +215,10 @@ das über einen `rest_command` auslösen, also auch per Zigbee-Taster am Bett, F
    input_text: !include homeassistant/input_text.yaml
    ```
    Gibt es `script:` oder `input_text:` schon (z. B. durch den UI-Editor), die Blöcke aus den Dateien dort
-   hineinkopieren bzw. den Helfer „Boobo letzter Eintrag“ in der UI anlegen.
+   hineinkopieren bzw. den Helfer „Boobo zuletzt notiert“ in der UI anlegen.
 2. Konfiguration prüfen, HA neu starten.
 3. Testen: Entwicklerwerkzeuge → Aktionen → `script.boobo_vorschlag` ausführen. In der App erscheint
-   sofort ein Eintrag mit der Notiz „per Taster“, die Sensoren ziehen direkt nach.
+   sofort das Stillen mit der Notiz „per Taster“, die Sensoren ziehen direkt nach.
 4. Taster anbinden: `automation_taster.yaml` als neue Automation einfügen und den Trigger auf deinen
    Taster anpassen (am einfachsten in der UI „Auslöser hinzufügen → Gerät“ wählen, dann in YAML wechseln).
 
@@ -223,7 +228,7 @@ Verfügbare Skripte:
 |---|---|
 | `script.boobo_vorschlag` | notiert die Seite, die Boobo gerade vorschlägt (ein Taster reicht) |
 | `script.boobo_links` / `_rechts` / `_beide` / `_flasche` | notiert die jeweilige Seite |
-| `script.boobo_rueckgaengig` | löscht den zuletzt aus HA notierten Eintrag |
+| `script.boobo_rueckgaengig` | nimmt zurück, was zuletzt aus HA notiert wurde |
 | `script.boobo_windel_nass` / `_voll` | notiert eine Windel (siehe Abschnitt 7) |
 | `script.boobo_medikament_genommen` | notiert eine Einnahme für Mama, Feld `medication_id` (siehe Abschnitt 9) |
 
@@ -233,10 +238,10 @@ den Dienst durch `notify.mobile_app_<handy>` ersetzen oder den Block entfernen.
 ### Doppelschutz („Schon notiert“)
 
 Zwei Handys, ein Taster und ein müder Daumen: Tippen kommt nachts gern doppelt an. Darum schickt
-`rest_command.boobo_stillen` immer `"on_duplicate": "skip"` mit. Gibt es in Boobo schon einen Eintrag, der weniger als
+`rest_command.boobo_stillen` immer `"on_duplicate": "skip"` mit. Gibt es in Boobo schon etwas Notiertes, das weniger als
 10 Minuten vor oder nach dem neuen liegt, speichert der Server nichts, antwortet mit `skipped: true` und dem vorhandenen
-Eintrag, und `script.boobo_notieren` schickt statt „Notiert“ die Meldung **„Schon notiert, um 14:32.“**.
-Der Helfer „Boobo letzter Eintrag“ bleibt dabei unverändert, „Rückgängig“ trifft also weiter den echten letzten Eintrag.
+Stillen, und `script.boobo_notieren` schickt statt „Notiert“ die Meldung **„Schon notiert, um 14:32.“**.
+Der Helfer „Boobo zuletzt notiert“ bleibt dabei unverändert, „Rückgängig“ trifft also weiter das echte letzte Stillen.
 Das Gleiche gilt für Medikamente. Windeln haben bewusst keinen Doppelschutz.
 Das Zeitfenster (Standard 10 min) stellt man am Server mit `FEED_DUPLICATE_MINUTES` ein.
 
@@ -245,7 +250,7 @@ Das Zeitfenster (Standard 10 min) stellt man am Server mit `FEED_DUPLICATE_MINUT
 `script.boobo_windel_nass` und `script.boobo_windel_voll` senden `POST /api/diapers` mit `kind: wet` bzw. `dirty`
 (über `rest_command.boobo_windel`), ziehen `sensor.boobo_status` sofort nach und schicken eine kurze Meldung
 („Nass, 14:32. Notiert.“ / „Alles im Fluss.“). Die Skripte lassen sich wie die Stillen-Skripte an Taster,
-Dashboard-Buttons oder Sprachbefehle hängen. Löschen geht in der App (Eintrag im Verlauf antippen).
+Dashboard-Buttons oder Sprachbefehle hängen. Löschen geht in der App (Windel im Verlauf antippen).
 
 ## 8. Tagesbilanz
 
@@ -300,9 +305,11 @@ Medikamente erscheinen nicht in `medications_due`.
   im Browser prüfen. HA-Log unter Einstellungen → System → Protokolle nach `rest` filtern.
 - **Keine Benachrichtigung**: Automation unter Einstellungen → Automatisierungen öffnen → „Ablaufverfolgung“
   ansehen. Prüfen, ob der Dienstname stimmt und das Handy Benachrichtigungen von der Companion-App erlaubt.
-- **„Schon notiert“, obwohl ich nichts getippt habe**: Innerhalb von 10 min nach einem vorhandenen Eintrag
+- **„Schon notiert“, obwohl ich nichts getippt habe**: Innerhalb von 10 min nach etwas bereits Notiertem
   (egal von welchem Handy oder Taster) wird nichts doppelt gespeichert, das ist der Doppelschutz. Soll tatsächlich
   etwas nachgetragen werden, in der App „Nachtragen“ mit anderer Uhrzeit oder per Rückfrage „Ja, trotzdem“ nutzen.
+- **Meldung „Hat gerade nicht geklappt“**: Die Skripte prüfen die Antwort von Boobo (HTTP 2xx). Kommt keine oder eine Fehlerantwort,
+  steht das in der Meldung statt „Notiert“. Dann Erreichbarkeit prüfen (`http://NAS-IP:8099/api/health`) und in der App nachtragen.
 - **Medikament-Skript meldet Fehler / 404**: Die `medication_id` gibt es nicht (mehr). Mit
   `curl http://NAS-IP:8099/api/medications` die aktuelle ID prüfen.
 - **Neue Sensoren fehlen oder zeigen `unknown`**: Läuft auf dem NAS schon die neue Boobo-Version? Wenn

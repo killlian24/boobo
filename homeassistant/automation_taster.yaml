@@ -9,7 +9,7 @@
 #
 # Belegung: 1× drücken = Seite, die dran ist · 2× = Flasche · lang = Rückgängig
 #
-# Doppelschutz: Tippt jemand innerhalb von 10 min nach einem Eintrag noch einmal (zweiter Taster,
+# Doppelschutz: Tippt jemand innerhalb von 10 min nach dem Notieren noch einmal (zweiter Taster,
 # versehentlicher Doppeldruck, anderes Handy war schneller), speichert der Server nichts doppelt.
 # Home Assistant bekommt dann „Schon notiert, um HH:MM.“ als Benachrichtigung zurück.
 

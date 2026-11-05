@@ -150,8 +150,19 @@ Alle Zeiten in der API sind ISO-8601 in UTC; die Oberfläche zeigt lokale Zeit.
   Für einen Bind-Mount auf dem NAS (z. B. `/volume1/docker/boobo:/data`) siehe Kommentar in
   `docker-compose.yml`; der Ordner muss uid 1000 gehören (`chown -R 1000:1000`).
 - **CSV-Export:** `http://NAS-IP:8099/api/export.csv` (auch über die Einstellungen in der App erreichbar).
-- **Backup:** Volume sichern oder einfach die Datei kopieren, z. B.
-  `docker cp boobo:/data/boobo.db ./boobo-backup.db`. Beim Zurückspielen den Container vorher stoppen.
+- **Backup:** Die Datenbank läuft im WAL-Modus, frische Änderungen stehen deshalb erst einmal in
+  `boobo.db-wal` und nicht in `boobo.db`. Nur `boobo.db` zu kopieren kann darum eine unvollständige
+  (oder gar nicht lesbare) Sicherung ergeben. Zwei saubere Wege:
+  - Im laufenden Betrieb eine konsistente Kopie schreiben lassen und die abholen:
+    ```bash
+    docker exec boobo node -e "const {DatabaseSync}=require('node:sqlite'); new DatabaseSync('/data/boobo.db',{readOnly:true}).exec(\"VACUUM INTO '/data/boobo-backup.db'\")"
+    docker cp boobo:/data/boobo-backup.db ./boobo-backup.db
+    docker exec boobo rm /data/boobo-backup.db
+    ```
+  - Oder den Container stoppen (`docker stop boobo`), dann `boobo.db` kopieren; beim Stoppen wird die
+    WAL-Datei in `boobo.db` zurückgeschrieben.
+  Beim Zurückspielen den Container stoppen, `boobo.db` ersetzen und `boobo.db-wal` sowie `boobo.db-shm`
+  im Volume löschen, sonst mischt SQLite alte und neue Daten.
 
 ## Lokale Entwicklung
 

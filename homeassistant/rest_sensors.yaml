@@ -12,9 +12,9 @@
   scan_interval: 60
   timeout: 10
   sensor:
-    # Sammel-Sensor: Status als Text, alle übrigen Felder als Attribute.
+    # Sammel-Sensor: Überblick als Text, alle übrigen Felder als Attribute.
     # Die Template-Entitäten in template.yaml lesen diese Attribute aus.
-    - name: "Boobo Status"
+    - name: "Boobo Überblick"
       unique_id: boobo_status
       icon: mdi:baby-bottle-outline
       value_template: >-

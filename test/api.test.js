@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { createServer } from '../server.js';
 
 const INTERVAL = 180;
@@ -54,7 +55,73 @@ describe('Boobo API', () => {
     const r = await api('OPTIONS', '/api/feeds');
     assert.equal(r.status, 204);
     assert.equal(r.headers.get('access-control-allow-origin'), '*');
-    assert.match(r.headers.get('access-control-allow-methods'), /PATCH/);
+    assert.match(r.headers.get('access-control-allow-methods'), /GET/);
+    assert.doesNotMatch(r.headers.get('access-control-allow-methods'), /PATCH|POST|DELETE/);
+  });
+
+  test('writes from a foreign origin are rejected, same origin and no origin pass', async () => {
+    const post = (origin) => fetch(base + '/api/diapers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', ...(origin ? { Origin: origin } : {}) },
+      body: JSON.stringify({ kind: 'wet', at: minutesAgo(5) }),
+    });
+    const foreign = await post('http://evil.example');
+    assert.equal(foreign.status, 403);
+    const same = await post(base);
+    assert.equal(same.status, 201);
+    const none = await post(null);
+    assert.equal(none.status, 201);
+    // Lesen bleibt für jede Herkunft erlaubt (Dashboards)
+    const read = await fetch(base + '/api/state', { headers: { Origin: 'http://evil.example' } });
+    assert.equal(read.status, 200);
+    for (const r of [same, none]) await api('DELETE', `/api/diapers/${(await r.json()).diaper.id}`);
+  });
+
+  test('an invalid request URL answers 400 and does not kill the server', async () => {
+    const reply = await new Promise((resolve, reject) => {
+      const sock = net.connect(app.server.address().port, '127.0.0.1', () => {
+        sock.write('GET // HTTP/1.1\r\nHost: localhost\r\n\r\n');
+      });
+      let buf = '';
+      sock.on('data', (d) => { buf += d; });
+      sock.on('end', () => resolve(buf));
+      sock.on('close', () => resolve(buf));
+      sock.on('error', reject);
+    });
+    assert.match(reply, /^HTTP\/1\.1 400/);
+    assert.equal((await api('GET', '/api/health')).status, 200);
+  });
+
+  test('before_id pages past entries with identical timestamps', async () => {
+    const at = minutesAgo(900);
+    const ids = [];
+    for (let i = 0; i < 3; i++) ids.push((await api('POST', '/api/feeds', { side: 'left', at, on_duplicate: 'force' })).json.feed.id);
+    const page1 = (await api('GET', '/api/feeds?limit=2')).json.feeds;
+    assert.deepEqual(page1.map((f) => f.id), [ids[2], ids[1]]);
+    const oldest = page1.at(-1);
+    const withoutId = (await api('GET', `/api/feeds?limit=2&before=${encodeURIComponent(oldest.at)}`)).json.feeds;
+    assert.ok(!withoutId.some((f) => f.id === ids[0]), 'ohne before_id bleibt der zeitgleiche Datensatz außen vor (altes Verhalten)');
+    const page2 = (await api('GET', `/api/feeds?limit=2&before=${encodeURIComponent(oldest.at)}&before_id=${oldest.id}`)).json.feeds;
+    assert.equal(page2[0].id, ids[0]);
+    assert.equal((await api('GET', '/api/feeds?before_id=x')).status, 400);
+    for (const id of ids) await api('DELETE', `/api/feeds/${id}`);
+  });
+
+  test('summary_24h and last_24h_count use the same window (not beyond now)', async () => {
+    const future = await api('POST', '/api/feeds', { side: 'right', at: new Date(Date.now() + 4 * 60000).toISOString(), on_duplicate: 'force' });
+    assert.equal(future.status, 201);
+    const s = (await api('GET', '/api/state')).json;
+    assert.equal(s.summary_24h.feeds, s.last_24h_count);
+    await api('DELETE', `/api/feeds/${future.json.feed.id}`);
+  });
+
+  test('sw.js carries a cache version derived from the shell files', async () => {
+    const res = await fetch(base + '/sw.js');
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /javascript/);
+    const body = await res.text();
+    assert.ok(!body.includes('__SHELL_VERSION__'));
+    assert.match(body, /CACHE_VERSION = 'boobo-shell-\d+\.\d+\.\d+-[0-9a-f]{12}'/);
   });
 
   test('GET /api/state without entries', async () => {
@@ -312,7 +379,13 @@ describe('Boobo API', () => {
     assert.ok(r.text.includes(`${withNote.json.feed.id},left,${withNote.json.feed.at},"Komma, ""Zitat""\nZeile 2"`));
     assert.equal(lines.at(-1), '');
 
+    // Freitext, der wie eine Formel beginnt, wird entschärft
+    const formula = await api('POST', '/api/feeds', { side: 'right', at: minutesAgo(590), note: '=1+1' });
+    const r2 = await api('GET', '/api/export.csv');
+    assert.ok(r2.text.includes(`${formula.json.feed.id},right,${formula.json.feed.at},'=1+1`));
+
     await api('DELETE', `/api/feeds/${withNote.json.feed.id}`);
+    await api('DELETE', `/api/feeds/${formula.json.feed.id}`);
   });
 
   test('unknown /api path returns 404 JSON', async () => {

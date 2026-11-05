@@ -281,7 +281,9 @@ function createRepo(db) {
     ),
     byId: db.prepare('SELECT * FROM feeds WHERE id = ?'),
     list: db.prepare('SELECT * FROM feeds ORDER BY at DESC, id DESC LIMIT ?'),
-    listBefore: db.prepare('SELECT * FROM feeds WHERE at < ? ORDER BY at DESC, id DESC LIMIT ?'),
+    listBefore: db.prepare(
+      'SELECT * FROM feeds WHERE at < ?1 OR (at = ?1 AND id < ?2) ORDER BY at DESC, id DESC LIMIT ?3',
+    ),
     all: db.prepare('SELECT id, side, at, note FROM feeds ORDER BY at ASC, id ASC'),
     update: db.prepare('UPDATE feeds SET side = ?, at = ?, note = ?, updated_at = ? WHERE id = ?'),
     remove: db.prepare('DELETE FROM feeds WHERE id = ?'),
@@ -291,7 +293,9 @@ function createRepo(db) {
     ),
     countSince: db.prepare('SELECT COUNT(*) AS n FROM feeds WHERE at >= ? AND at <= ?'),
     feedsNear: db.prepare('SELECT * FROM feeds WHERE at > ? AND at < ? ORDER BY at DESC, id DESC'),
-    feedsAfter: db.prepare('SELECT id, side, at FROM feeds WHERE at > ? ORDER BY at ASC, id ASC'),
+    feedsBetween: db.prepare(
+      'SELECT id, side, at FROM feeds WHERE at > ? AND at <= ? ORDER BY at ASC, id ASC',
+    ),
     feedsFrom: db.prepare('SELECT id, side, at FROM feeds WHERE at >= ? ORDER BY at ASC, id ASC'),
     feedBefore: db.prepare('SELECT id, side, at FROM feeds WHERE at < ? ORDER BY at DESC, id DESC LIMIT 1'),
 
@@ -301,15 +305,15 @@ function createRepo(db) {
     diaperById: db.prepare('SELECT * FROM diapers WHERE id = ?'),
     diaperList: db.prepare('SELECT * FROM diapers ORDER BY at DESC, id DESC LIMIT ?'),
     diaperListBefore: db.prepare(
-      'SELECT * FROM diapers WHERE at < ? ORDER BY at DESC, id DESC LIMIT ?',
+      'SELECT * FROM diapers WHERE at < ?1 OR (at = ?1 AND id < ?2) ORDER BY at DESC, id DESC LIMIT ?3',
     ),
     diaperAll: db.prepare('SELECT id, kind, at, note FROM diapers ORDER BY at ASC, id ASC'),
     diaperUpdate: db.prepare(
       'UPDATE diapers SET kind = ?, at = ?, note = ?, updated_at = ? WHERE id = ?',
     ),
     diaperRemove: db.prepare('DELETE FROM diapers WHERE id = ?'),
-    diaperCountsAfter: db.prepare(
-      'SELECT kind, COUNT(*) AS n FROM diapers WHERE at > ? GROUP BY kind',
+    diaperCountsBetween: db.prepare(
+      'SELECT kind, COUNT(*) AS n FROM diapers WHERE at > ? AND at <= ? GROUP BY kind',
     ),
     diapersFrom: db.prepare('SELECT kind, at FROM diapers WHERE at >= ? ORDER BY at ASC, id ASC'),
 
@@ -328,6 +332,9 @@ function createRepo(db) {
       'SELECT (SELECT MAX(at) FROM med_intakes WHERE medication_id = ?) AS last_at, ' +
         'COUNT(*) AS taken, MIN(at) AS oldest FROM med_intakes WHERE medication_id = ? AND at > ?',
     ),
+    medNthOldest: db.prepare(
+      'SELECT at FROM med_intakes WHERE medication_id = ? AND at > ? ORDER BY at ASC, id ASC LIMIT 1 OFFSET ?',
+    ),
 
     intakeInsert: db.prepare(
       'INSERT INTO med_intakes (medication_id, at, note, created_at) VALUES (?, ?, ?, ?)',
@@ -342,7 +349,7 @@ function createRepo(db) {
     intakeList: db.prepare(
       'SELECT i.id, i.medication_id, m.name, m.dose, i.at, i.note, i.created_at ' +
         'FROM med_intakes i JOIN medications m ON m.id = i.medication_id ' +
-        'WHERE (?1 IS NULL OR i.medication_id = ?1) AND (?2 IS NULL OR i.at < ?2) ' +
+        'WHERE (?1 IS NULL OR i.medication_id = ?1) AND (?2 IS NULL OR i.at < ?2 OR (i.at = ?2 AND i.id < ?4)) ' +
         'ORDER BY i.at DESC, i.id DESC LIMIT ?3',
     ),
     intakeAll: db.prepare(
@@ -384,8 +391,10 @@ function createRepo(db) {
     byId(id) {
       return stmts.byId.get(id) ?? null;
     },
-    list(limit, before) {
-      return before ? stmts.listBefore.all(before, limit) : stmts.list.all(limit);
+    // Cursor: alles vor `before`; bei gleichem Zeitstempel nur kleinere IDs als `beforeId`
+    // (ohne beforeId bleiben zeitgleiche Datensätze außen vor, wie bisher).
+    list(limit, before, beforeId = 0) {
+      return before ? stmts.listBefore.all(before, beforeId, limit) : stmts.list.all(limit);
     },
     all() {
       return stmts.all.all();
@@ -418,8 +427,8 @@ function createRepo(db) {
     findDuplicateFeed(at, windowMinutes) {
       return nearestDuplicate(at, windowMinutes, (lo, hi) => stmts.feedsNear.all(lo, hi));
     },
-    feedsAfter(fromIso) {
-      return stmts.feedsAfter.all(fromIso);
+    feedsBetween(fromIso, toIso) {
+      return stmts.feedsBetween.all(fromIso, toIso);
     },
     feedsFrom(fromIso) {
       return stmts.feedsFrom.all(fromIso);
@@ -437,8 +446,8 @@ function createRepo(db) {
     diaperById(id) {
       return stmts.diaperById.get(id) ?? null;
     },
-    listDiapers(limit, before) {
-      return before ? stmts.diaperListBefore.all(before, limit) : stmts.diaperList.all(limit);
+    listDiapers(limit, before, beforeId = 0) {
+      return before ? stmts.diaperListBefore.all(before, beforeId, limit) : stmts.diaperList.all(limit);
     },
     allDiapers() {
       return stmts.diaperAll.all();
@@ -450,9 +459,9 @@ function createRepo(db) {
     removeDiaper(id) {
       return stmts.diaperRemove.run(id).changes > 0;
     },
-    diaperCountsAfter(fromIso) {
+    diaperCountsBetween(fromIso, toIso) {
       const out = { wet: 0, dirty: 0 };
-      for (const row of stmts.diaperCountsAfter.all(fromIso)) {
+      for (const row of stmts.diaperCountsBetween.all(fromIso, toIso)) {
         if (row.kind in out) out[row.kind] = Number(row.n);
       }
       return out;
@@ -485,6 +494,10 @@ function createRepo(db) {
     medicationStats(id, dayAgoIso) {
       return stmts.medStats.get(id, id, dayAgoIso);
     },
+    // Einnahme im Fenster, nach der (von alt nach neu gezählt) `skip` weitere liegen.
+    medicationNthOldest(id, dayAgoIso, skip) {
+      return stmts.medNthOldest.get(id, dayAgoIso, skip)?.at ?? null;
+    },
 
     // --- medication intakes ---
     insertIntake(medicationId, at, note) {
@@ -496,8 +509,8 @@ function createRepo(db) {
         stmts.intakesNear.all(medicationId, lo, hi),
       );
     },
-    listIntakes(limit, before, medicationId) {
-      return stmts.intakeList.all(medicationId ?? null, before ?? null, limit);
+    listIntakes(limit, before, medicationId, beforeId = 0) {
+      return stmts.intakeList.all(medicationId ?? null, before ?? null, limit, beforeId);
     },
     allIntakes() {
       return stmts.intakeAll.all();
@@ -791,6 +804,16 @@ function parseBefore(raw) {
   return new Date(ms).toISOString();
 }
 
+// Zweiter Teil des Cursors (docs/API.md): ID des ältesten bereits geladenen Datensatzes,
+// damit zeitgleiche Datensätze an Seitengrenzen nicht übersprungen werden.
+function parseBeforeId(raw) {
+  if (raw === null || raw === '') return 0;
+  if (!/^\d+$/.test(raw)) throw new HttpError(400, 'before_id must be a positive integer');
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(n)) throw new HttpError(400, 'before_id must be a positive integer');
+  return n;
+}
+
 function parseDuplicateMinutes(raw) {
   if (raw === undefined || raw === null || String(raw).trim() === '') return DUPLICATE_MINUTES_DEFAULT;
   const n = Number(raw);
@@ -799,7 +822,9 @@ function parseDuplicateMinutes(raw) {
 
 function csvEscape(value) {
   if (value === null || value === undefined) return '';
-  const s = String(value);
+  let s = String(value);
+  // Freitext, der wie eine Formel beginnt (=, +, -, @, Tab), wird in Tabellenprogrammen sonst ausgeführt.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -814,6 +839,19 @@ function sendCsv(res, filename, header, rows) {
     'Cache-Control': 'no-cache',
   });
   return res.end(csv);
+}
+
+// Origin-Header gesetzt und passt nicht zum angesprochenen Host → fremde Webseite im Browser.
+function isCrossOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin === undefined) return false;
+  const host = req.headers.host;
+  if (!host) return true;
+  try {
+    return new URL(origin).host.toLowerCase() !== String(host).toLowerCase();
+  } catch {
+    return true;
+  }
 }
 
 function oppositeSide(side) {
@@ -865,7 +903,7 @@ function buildState(repo, timeZone) {
     suggested_side: suggestedSide,
     today_count: repo.countBetween(midnight, nowIsoStr),
     last_24h_count: repo.countBetween(dayAgo, nowIsoStr),
-    summary_24h: buildSummary24h(repo, now.getTime(), dayAgo),
+    summary_24h: buildSummary24h(repo, now.getTime(), dayAgo, nowIsoStr),
     medications: medications.map((m) => ({
       id: m.id,
       name: m.name,
@@ -881,8 +919,9 @@ function buildState(repo, timeZone) {
 }
 
 // Rolling 24 h summary of feeds and diapers (docs/API.md, Erweiterung 2 §3).
-function buildSummary24h(repo, nowMs, dayAgoIso) {
-  const feeds = repo.feedsAfter(dayAgoIso);
+// Gleiches Fenster wie last_24h_count: bis jetzt, nicht darüber hinaus (at darf 5 min in der Zukunft liegen).
+function buildSummary24h(repo, nowMs, dayAgoIso, nowIsoStr) {
+  const feeds = repo.feedsBetween(dayAgoIso, nowIsoStr);
   const bottle = feeds.filter((f) => f.side === 'bottle').length;
   let longestMs = null;
   let gapSumMs = 0;
@@ -896,7 +935,7 @@ function buildSummary24h(repo, nowMs, dayAgoIso) {
     const running = Math.max(0, nowMs - Date.parse(feeds.at(-1).at));
     if (longestMs === null || running > longestMs) longestMs = running;
   }
-  const diapers = repo.diaperCountsAfter(dayAgoIso);
+  const diapers = repo.diaperCountsBetween(dayAgoIso, nowIsoStr);
   return {
     feeds: feeds.length,
     breast: feeds.length - bottle,
@@ -1090,7 +1129,8 @@ function buildStats(repo, timeZone, rangeDays) {
 
 // Medication with its status, see docs/API.md, Erweiterung 2 §4 „Statusberechnung“.
 function medicationView(repo, med, nowMs) {
-  const stats = repo.medicationStats(med.id, new Date(nowMs - DAY_MS).toISOString());
+  const dayAgoIso = new Date(nowMs - DAY_MS).toISOString();
+  const stats = repo.medicationStats(med.id, dayAgoIso);
   const lastAt = stats.last_at ?? null;
   const lastMs = lastAt === null ? null : Date.parse(lastAt);
   const taken = Number(stats.taken ?? 0);
@@ -1100,7 +1140,11 @@ function medicationView(repo, med, nowMs) {
   let nextMs = null;
   if (lastMs !== null) nextMs = lastMs + Number(med.min_gap_minutes) * MINUTE_MS;
   if (remaining === 0 && stats.oldest) {
-    const windowFreesAt = Date.parse(stats.oldest) + DAY_MS;
+    // Platz gibt es erst, wenn so viele Einnahmen aus dem Fenster gefallen sind, dass wieder
+    // weniger als max_per_day darin liegen. Bei mehr Einnahmen als erlaubt (nachträglich gesenkte
+    // Höchstzahl, bewusst trotzdem genommen) ist das nicht die älteste, sondern die (taken − max + 1)-te.
+    const frees = repo.medicationNthOldest(med.id, dayAgoIso, taken - maxPerDay) ?? stats.oldest;
+    const windowFreesAt = Date.parse(frees) + DAY_MS;
     nextMs = nextMs === null ? windowFreesAt : Math.max(nextMs, windowFreesAt);
   }
   if (nextMs !== null && nextMs <= nowMs) nextMs = null;
@@ -1152,7 +1196,7 @@ function validateYmd(value, field, todayYmd) {
     throw new HttpError(400, `${field} is not a valid date`);
   }
   if (value < '2000-01-01') throw new HttpError(400, `${field} must not be before 2000-01-01`);
-  if (value > shiftYmd(todayYmd, 1)) throw new HttpError(400, `${field} must not be in the future`);
+  if (value > todayYmd) throw new HttpError(400, `${field} must not be in the future`);
   return value;
 }
 
@@ -1441,13 +1485,15 @@ async function handleGrowth(req, res, url, ctx) {
   const measMatch = /^\/api\/growth\/measurements\/([^/]+)$/.exec(p);
   if (measMatch) {
     const id = parseId(measMatch[1], 'Measurement not found');
-    const existing = repo.measurementById(id);
     if (method === 'GET') {
+      const existing = repo.measurementById(id);
       if (!existing) throw new HttpError(404, 'Measurement not found');
       return sendJson(res, 200, { measurement: existing });
     }
     if (method === 'PATCH') {
       const body = await readJsonBody(req);
+      // Erst nach dem Body lesen: während des Wartens kann das andere Handy ein anderes Feld geändert haben.
+      const existing = repo.measurementById(id);
       if (!existing) throw new HttpError(404, 'Measurement not found');
       const fields = ['date', 'weight_g', 'length_cm', 'hc_cm', 'source', 'note'];
       if (!fields.some((k) => k in body)) throw new HttpError(400, `Body must contain at least one of: ${fields.join(', ')}`);
@@ -1521,7 +1567,8 @@ async function handleApi(req, res, url, ctx) {
     if (method === 'GET') {
       const limit = parseLimit(url.searchParams.get('limit'));
       const before = parseBefore(url.searchParams.get('before'));
-      return sendJson(res, 200, { feeds: repo.list(limit, before) });
+      const beforeId = parseBeforeId(url.searchParams.get('before_id'));
+      return sendJson(res, 200, { feeds: repo.list(limit, before, beforeId) });
     }
     if (method === 'POST') {
       const body = await readJsonBody(req);
@@ -1588,7 +1635,8 @@ async function handleApi(req, res, url, ctx) {
     if (method === 'GET') {
       const limit = parseLimit(url.searchParams.get('limit'));
       const before = parseBefore(url.searchParams.get('before'));
-      return sendJson(res, 200, { diapers: repo.listDiapers(limit, before) });
+      const beforeId = parseBeforeId(url.searchParams.get('before_id'));
+      return sendJson(res, 200, { diapers: repo.listDiapers(limit, before, beforeId) });
     }
     if (method === 'POST') {
       const body = await readJsonBody(req);
@@ -1717,13 +1765,14 @@ async function handleApi(req, res, url, ctx) {
     if (method === 'GET') {
       const limit = parseLimit(url.searchParams.get('limit'));
       const before = parseBefore(url.searchParams.get('before'));
+      const beforeId = parseBeforeId(url.searchParams.get('before_id'));
       const medRaw = url.searchParams.get('medication_id');
       let medicationId = null;
       if (medRaw !== null && medRaw !== '') {
         if (!/^\d+$/.test(medRaw)) throw new HttpError(400, 'medication_id must be a positive integer');
         medicationId = Number.parseInt(medRaw, 10);
       }
-      return sendJson(res, 200, { intakes: repo.listIntakes(limit, before, medicationId) });
+      return sendJson(res, 200, { intakes: repo.listIntakes(limit, before, medicationId, beforeId) });
     }
     throw new HttpError(405, 'Method not allowed');
   }
@@ -1799,6 +1848,38 @@ function cacheControlFor(filePath) {
   return 'public, max-age=86400';
 }
 
+// Der Service Worker bekommt seine Cache-Version aus dem Inhalt der App-Shell: ändert sich beim Deploy
+// irgendeine Shell-Datei, ändert sich sw.js mit, der Browser installiert ihn neu und wirft den alten Cache weg.
+const SHELL_FILES = ['index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const shellVersionCache = new Map(); // publicRoot → { key, version }
+function shellVersion(publicRoot) {
+  const stats = SHELL_FILES.map((f) => statFile(path.join(publicRoot, f)));
+  const key = stats.map((st) => (st ? `${st.size}:${st.mtimeMs}` : '-')).join('|');
+  const cached = shellVersionCache.get(publicRoot);
+  if (cached && cached.key === key) return cached.version;
+  const hash = crypto.createHash('sha1');
+  SHELL_FILES.forEach((f, i) => {
+    if (stats[i]) hash.update(fs.readFileSync(path.join(publicRoot, f)));
+    hash.update('\0');
+  });
+  const version = `${VERSION}-${hash.digest('hex').slice(0, 12)}`;
+  shellVersionCache.set(publicRoot, { key, version });
+  return version;
+}
+
+function sendServiceWorker(req, res, filePath, publicRoot) {
+  const body = fs
+    .readFileSync(filePath, 'utf8')
+    .replace('__SHELL_VERSION__', shellVersion(publicRoot));
+  res.writeHead(200, {
+    'Content-Type': MIME_TYPES['.js'],
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-cache',
+  });
+  if (req.method === 'HEAD') return res.end();
+  res.end(body);
+}
+
 function sendFile(req, res, filePath, stat) {
   const ext = path.extname(filePath).toLowerCase();
   const headers = {
@@ -1867,6 +1948,7 @@ function handleStatic(req, res, url, publicDir) {
     }
   }
 
+  if (filePath === path.join(publicRoot, 'sw.js')) return sendServiceWorker(req, res, filePath, publicRoot);
   sendFile(req, res, filePath, stat);
 }
 
@@ -1978,9 +2060,11 @@ function sendCaCert(req, res, tls) {
   res.end(body);
 }
 
+// Lesen darf jede Seite (Dashboards, Kiosk-Anzeigen); Schreiben nur die App selbst oder Clients ohne Origin
+// (Home Assistant, curl). Browser schicken bei POST/PATCH/PUT/DELETE immer einen Origin-Header mit.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
 };
@@ -2025,7 +2109,14 @@ export function createServer({
 
   const handler = async (req, res) => {
     const started = process.hrtime.bigint();
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      // z. B. „GET //“ – darf den Prozess nicht beenden
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+      return res.end('Bad request');
+    }
     const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
 
     res.on('finish', () => {
@@ -2038,6 +2129,9 @@ export function createServer({
         for (const [k, v] of Object.entries(CORS_HEADERS)) res.setHeader(k, v);
         res.setHeader('Cache-Control', 'no-store');
         if (req.method === 'OPTIONS') return sendEmpty(res, 204);
+        if (req.method !== 'GET' && req.method !== 'HEAD' && isCrossOrigin(req)) {
+          throw new HttpError(403, 'Cross-origin write requests are not allowed');
+        }
         await handleApi(req, res, url, ctx);
       } else if (url.pathname === '/boobo-ca.crt' && tls && (req.method === 'GET' || req.method === 'HEAD')) {
         sendCaCert(req, res, tls);

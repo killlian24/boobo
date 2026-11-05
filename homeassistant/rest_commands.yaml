@@ -12,7 +12,7 @@
 #     note: "per Taster" # optional
 #
 # Doppelschutz: boobo_stillen schickt `on_duplicate: skip`. Gibt es innerhalb von 10 min schon einen
-# Eintrag (z. B. weil das andere Handy gerade getippt hat), speichert der Server nichts doppelt und
+# Notiertes (z. B. weil das andere Handy gerade getippt hat), speichert der Server nichts doppelt und
 # antwortet mit `skipped: true`. Die Skripte in scripts.yaml melden dann „Schon notiert“.
 
 boobo_stillen:
@@ -21,9 +21,9 @@ boobo_stillen:
   content_type: "application/json"
   timeout: 10
   payload: >-
-    {"side": "{{ side }}", "on_duplicate": "skip"{% if note is defined and note %}, "note": "{{ note | replace('"', '') }}"{% endif %}}
+    {{ {'side': side, 'on_duplicate': 'skip'} | combine({'note': note} if note is defined and note else {}) | to_json }}
 
-# Letzten Eintrag wieder löschen (z. B. bei versehentlichem Tastendruck).
+# Zuletzt Notiertes wieder löschen (z. B. bei versehentlichem Tastendruck).
 # Braucht die ID aus der Antwort von boobo_stillen (siehe scripts.yaml: script.boobo_rueckgaengig).
 boobo_loeschen:
   url: "http://NAS-IP:8099/api/feeds/{{ feed_id }}"

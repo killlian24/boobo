@@ -8,6 +8,9 @@ LAN-only über http://NAS-IP:8099. Keine Benutzer, keine Authentifizierung.
 - HTTP-Server mit `node:http`, Datenbank mit `node:sqlite` (`DatabaseSync`), Datei `${DATA_DIR}/boobo.db`.
 - Statische Dateien aus `public/` ausliefern (Root `/` → `public/index.html`), korrekte MIME-Types,
   `Cache-Control: no-cache` für HTML/sw.js/manifest, kurzes Caching für Rest ist ok.
+  `sw.js` wird vom Server ausgeliefert, dabei ersetzt er `__SHELL_VERSION__` durch Paketversion plus Prüfsumme der
+  Shell-Dateien (index.html, app.css, app.js, manifest, Icons): ändert sich beim Deploy irgendeine davon, ist der Worker neu
+  und ersetzt den alten Cache. Pflichtdateien, die beim Installieren nicht laden, lassen den alten Worker aktiv.
 - Umgebungsvariablen: `PORT` (Default 8099), `DATA_DIR` (Default `./data`), `FEED_INTERVAL_MINUTES` (Default 180),
   `TZ` wird nur fürs Logging genutzt; alle Zeiten in der API sind ISO-8601 **UTC** (`...Z`). Der Client formatiert lokal.
 - Alles in einer Datei `server.js` (plus optional `lib/*.js`). ESM (`"type": "module"` in package.json).
@@ -27,7 +30,10 @@ Tabelle `feeds`:
 Tabelle `settings` (key TEXT PK, value TEXT): aktuell nur `interval_minutes` (Default aus `FEED_INTERVAL_MINUTES`).
 
 Alle JSON-Antworten: `Content-Type: application/json; charset=utf-8`. Fehler: `{ "error": "message" }` mit 400/404/500.
-CORS: `Access-Control-Allow-Origin: *` auf `/api/*` (damit Home Assistant und Tests problemlos lesen), OPTIONS beantworten.
+CORS: `Access-Control-Allow-Origin: *` auf `/api/*`, erlaubte Methoden nur `GET, HEAD, OPTIONS` (Dashboards dürfen lesen).
+Schreibende Requests (POST/PATCH/PUT/DELETE) mit einem `Origin`-Header, der nicht zum `Host` passt, bekommen `403` –
+so kann keine fremde Webseite im Browser eines Elternteils Einträge anlegen. Clients ohne Origin (Home Assistant,
+curl) sind nicht betroffen.
 
 ## Endpunkte
 
@@ -50,8 +56,11 @@ CORS: `Access-Control-Allow-Origin: *` auf `/api/*` (damit Home Assistant und Te
 }
 ```
 
-### `GET /api/feeds?limit=50&before=<ISO>`
-→ `200 { "feeds": [ {id, side, at, note, created_at, updated_at}, ... ] }` sortiert nach `at` absteigend. `limit` max 500, Default 50.
+### `GET /api/feeds?limit=50&before=<ISO>&before_id=<id>`
+→ `200 { "feeds": [ {id, side, at, note, created_at, updated_at}, ... ] }` sortiert nach `at` absteigend, bei gleichem `at` nach `id` absteigend. `limit` max 500, Default 50.
+Cursor fürs Blättern: `before` = `at` des ältesten schon geladenen Datensatzes, `before_id` dessen `id`. Mit beiden
+liefert die Seite alles, was älter ist **oder** zeitgleich mit kleinerer id; ohne `before_id` nur Älteres (zeitgleiche
+Datensätze an der Seitengrenze würden dann fehlen). Gleiches Schema bei `/api/diapers` und `/api/med-intakes`.
 
 ### `POST /api/feeds`
 Body: `{ "side": "left", "at": "<ISO optional, Default now>", "note": "optional" }`
@@ -102,7 +111,7 @@ Zwei Handys tippen nachts oft fast gleichzeitig. Darum:
 
 ## 2. Windeln
 Tabelle `diapers`: `id`, `kind` (`wet` | `dirty`), `at`, `note`, `created_at`, `updated_at` (wie `feeds`).
-- `GET /api/diapers?limit=50&before=<ISO>` → `200 { "diapers": [ {id, kind, at, note, created_at, updated_at} ] }`, `at` absteigend, limit max 500.
+- `GET /api/diapers?limit=50&before=<ISO>&before_id=<id>` → `200 { "diapers": [ {id, kind, at, note, created_at, updated_at} ] }`, `at` absteigend, limit max 500.
 - `POST /api/diapers` Body `{ "kind": "wet", "at": "<ISO optional>", "note": "optional" }` → `201 { "diaper": {...} }`.
   Kein Doppelschutz (zwei Windeln kurz hintereinander sind real). Gleiche `at`-Validierung wie bei feeds.
 - `PATCH /api/diapers/:id` (Teilmenge von kind/at/note) → `200 { "diaper": {...} }`, `DELETE /api/diapers/:id` → `204`.
@@ -112,7 +121,7 @@ Tabelle `diapers`: `id`, `kind` (`wet` | `dirty`), `at`, `note`, `created_at`, `
 Neues Feld (zusätzlich zu `today_count` / `last_24h_count`, die bleiben):
 ```json
 "summary_24h": {
-  "feeds": 9,                  // alle Einträge mit at > now − 24 h
+  "feeds": 9,                  // alle Einträge mit now − 24 h < at ≤ now (wie last_24h_count; bis 5 min vordatierte Einträge zählen erst, wenn ihre Zeit da ist)
   "breast": 7,                 // davon left/right/both
   "bottle": 2,
   "longest_gap_minutes": 220,  // größte Lücke zwischen aufeinanderfolgenden Einträgen im Fenster, inkl. der laufenden Lücke seit dem letzten Eintrag; null wenn kein Eintrag im Fenster
@@ -146,7 +155,10 @@ Tabelle `med_intakes`: `id`, `medication_id` (FK, ON DELETE CASCADE), `at`, `not
 - `taken_24h` = Einnahmen mit `at > now − 24 h`; `last_at` = letzte Einnahme überhaupt (oder null)
 - `remaining_24h` = `max_per_day − taken_24h` (null wenn max_per_day null; nie < 0)
 - `next_possible_at` = Maximum aus: `last_at + min_gap_minutes` (wenn last_at) und, falls `remaining_24h === 0`,
-  `älteste Einnahme im Fenster + 24 h`. Liegt das Maximum in der Vergangenheit oder gibt es keine Einnahme → `null`.
+  dem Zeitpunkt, zu dem wieder weniger als `max_per_day` Einnahmen im Fenster liegen: die
+  `(taken_24h − max_per_day + 1)`-älteste Einnahme im Fenster + 24 h (bei genau `max_per_day` Einnahmen also die
+  älteste; wurden mehr genommen, entsprechend eine spätere). Liegt das Maximum in der Vergangenheit oder gibt es
+  keine Einnahme → `null`.
 - `possible_now` = `next_possible_at === null`
 - `minutes_until_possible` = Minuten bis `next_possible_at`, aufgerundet; null wenn possible_now
 - `due` = `possible_now && last_at !== null && now − last_at < 36 h` (nach 36 h ohne Einnahme gilt das Mittel als
@@ -162,7 +174,7 @@ Endpunkte:
   → `201 { "intake": {id, medication_id, at, note, created_at}, "medication": {...mit Status} }`.
   Doppelschutz wie bei feeds (10 min, gleiche Semantik: 409 / 200 skipped / 201). Eine Einnahme **vor** `next_possible_at`
   wird **nicht** vom Server verhindert (Mama entscheidet), der Client fragt vorher nach.
-- `GET /api/med-intakes?limit=50&before=<ISO>&medication_id=<id>` → `200 { "intakes": [ { id, medication_id, name, dose, at, note, created_at } ] }`, `at` absteigend
+- `GET /api/med-intakes?limit=50&before=<ISO>&before_id=<id>&medication_id=<id>` → `200 { "intakes": [ { id, medication_id, name, dose, at, note, created_at } ] }`, `at` absteigend
 - `GET /api/med-intakes/:id` → `200 { "intake": {id, medication_id, at, note, created_at} }`
 - `PATCH /api/med-intakes/:id` Teilmenge von `{ "at": "<ISO>", "note": "..." }` → `200 { "intake": {...}, "medication": {...mit Status} }`.
   Zum Nachkorrigieren, wenn „Genommen“ erst später gedrückt wurde: `at` darf höchstens 5 min in der Zukunft liegen, `created_at` bleibt.
@@ -303,7 +315,8 @@ abdeckt. `measurements[]`: Messwerte plus `age_days`, `plot_age_days`, `scores.{
 (Gewicht in g, sonst cm).
 
 ### `GET /api/growth/profile` → `{ profile }`; `PUT`/`PATCH /api/growth/profile`
-Nur mitgeschickte Felder werden geändert. `ref` muss eine verfügbare Kurve sein. Geburtstag nicht in der Zukunft.
+Nur mitgeschickte Felder werden geändert. `ref` muss eine verfügbare Kurve sein. Geburtstag nicht in der Zukunft
+(heute in der Zeitzone des Servers ist der letzte erlaubte Tag; gleiche Grenze für `date` einer Messung).
 
 ### `GET`/`POST /api/growth/measurements`, `GET`/`PATCH`/`DELETE /api/growth/measurements/:id`
 `POST` → `201 { measurement }`. `PATCH` mit mindestens einem Feld; leerer Messwert-Satz → 400.

@@ -56,7 +56,7 @@ boobo_flasche:
       data: { side: bottle }
 
 # Gemeinsamer Unterbau: notieren, Sensoren sofort aktualisieren, kurze Bestätigung schicken,
-# ID des Eintrags für „Rückgängig“ merken.
+# die ID des Notierten für „Rückgängig“ merken.
 boobo_notieren:
   alias: "Boobo: notieren (intern)"
   mode: queued
@@ -73,9 +73,25 @@ boobo_notieren:
         side: "{{ side }}"
         note: "{{ note | default('') }}"
       response_variable: antwort
+      continue_on_error: true
+    # Nicht erreichbar oder Fehlerantwort (kein 2xx)? Dann ehrlich sagen, statt „Notiert“ zu melden.
+    # Bei `continue_on_error` bleibt `antwort` im Fehlerfall evtl. ungesetzt – das zählt auch als Fehler.
     # Doppelschutz: Hat der Server nichts gespeichert, weil vor Kurzem schon notiert wurde
     # (`skipped: true`), sagen wir das freundlich und lassen alles andere in Ruhe.
     - choose:
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ antwort is not defined or antwort.status is not defined or antwort.status >= 300 }}
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Hat gerade nicht geklappt"
+                message: "Boobo war nicht erreichbar. In der App nachtragen."
+                data:
+                  tag: boobo-notiert
+                  channel: Boobo
+              continue_on_error: true
         - conditions:
             - condition: template
               value_template: >-
@@ -115,8 +131,8 @@ boobo_notieren:
           continue_on_error: true
 
 boobo_rueckgaengig:
-  alias: "Boobo: letzten Eintrag rückgängig"
-  description: "Löscht den Eintrag, der zuletzt aus Home Assistant notiert wurde."
+  alias: "Boobo: zuletzt Notiertes zurücknehmen"
+  description: "Nimmt zurück, was zuletzt aus Home Assistant notiert wurde."
   icon: mdi:undo
   mode: single
   sequence:
@@ -125,18 +141,37 @@ boobo_rueckgaengig:
     - action: rest_command.boobo_loeschen
       data:
         feed_id: "{{ states('input_text.boobo_letzter_eintrag') }}"
-    - action: input_text.set_value
-      target:
-        entity_id: input_text.boobo_letzter_eintrag
-      data:
-        value: ""
-    - action: homeassistant.update_entity
-      target:
-        entity_id: sensor.boobo_status
+      response_variable: antwort
       continue_on_error: true
+    # Fehler melden, statt so zu tun, als wäre alles zurückgenommen. 404 heißt: in der App schon weg, das ist okay.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ antwort is not defined or antwort.status is not defined
+                   or (antwort.status >= 300 and antwort.status != 404) }}
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Hat gerade nicht geklappt"
+                message: "Boobo war nicht erreichbar. In der App nachtragen."
+                data:
+                  tag: boobo-notiert
+                  channel: Boobo
+              continue_on_error: true
+      default:
+        - action: input_text.set_value
+          target:
+            entity_id: input_text.boobo_letzter_eintrag
+          data:
+            value: ""
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.boobo_status
+          continue_on_error: true
 
-# Windeln: ein Tastendruck, ein Eintrag. Kein Doppelschutz, zwei Windeln kurz nacheinander sind real.
-# „Rückgängig“ gibt es hier nicht – in der App den Eintrag antippen und löschen.
+# Windeln: ein Tastendruck, eine Windel. Kein Doppelschutz, zwei Windeln kurz nacheinander sind real.
+# „Rückgängig“ gibt es hier nicht – in der App die Windel antippen und löschen.
 boobo_windel_nass:
   alias: "Boobo: Windel nass notieren"
   icon: mdi:water
@@ -144,19 +179,35 @@ boobo_windel_nass:
   sequence:
     - action: rest_command.boobo_windel
       data: { kind: wet }
+      response_variable: antwort
       continue_on_error: true
-    - action: homeassistant.update_entity
-      target:
-        entity_id: sensor.boobo_status
-      continue_on_error: true
-    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
-      data:
-        title: "Nass, {{ now().strftime('%H:%M') }}. Notiert."
-        message: "Alles im Fluss."
-        data:
-          tag: boobo-windel
-          channel: Boobo
-      continue_on_error: true
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ antwort is not defined or antwort.status is not defined or antwort.status >= 300 }}
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Hat gerade nicht geklappt"
+                message: "Boobo war nicht erreichbar. In der App nachtragen."
+                data:
+                  tag: boobo-windel
+                  channel: Boobo
+              continue_on_error: true
+      default:
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.boobo_status
+          continue_on_error: true
+        - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+          data:
+            title: "Nass, {{ now().strftime('%H:%M') }}. Notiert."
+            message: "Alles im Fluss."
+            data:
+              tag: boobo-windel
+              channel: Boobo
+          continue_on_error: true
 
 boobo_windel_voll:
   alias: "Boobo: Windel voll notieren"
@@ -165,19 +216,35 @@ boobo_windel_voll:
   sequence:
     - action: rest_command.boobo_windel
       data: { kind: dirty }
+      response_variable: antwort
       continue_on_error: true
-    - action: homeassistant.update_entity
-      target:
-        entity_id: sensor.boobo_status
-      continue_on_error: true
-    - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
-      data:
-        title: "Voll, {{ now().strftime('%H:%M') }}. Notiert."
-        message: "Volle Leistung, Bobo."
-        data:
-          tag: boobo-windel
-          channel: Boobo
-      continue_on_error: true
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: >-
+                {{ antwort is not defined or antwort.status is not defined or antwort.status >= 300 }}
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Hat gerade nicht geklappt"
+                message: "Boobo war nicht erreichbar. In der App nachtragen."
+                data:
+                  tag: boobo-windel
+                  channel: Boobo
+              continue_on_error: true
+      default:
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.boobo_status
+          continue_on_error: true
+        - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+          data:
+            title: "Voll, {{ now().strftime('%H:%M') }}. Notiert."
+            message: "Volle Leistung, Bobo."
+            data:
+              tag: boobo-windel
+              channel: Boobo
+          continue_on_error: true
 
 # Medikament für Mama als genommen notieren.
 # Aufruf mit der ID aus GET /api/medications:
@@ -198,6 +265,7 @@ boobo_medikament_genommen:
       data:
         medication_id: "{{ medication_id }}"
       response_variable: antwort
+      continue_on_error: true
     # Name für die Meldung: aus der Antwort, sonst aus den Attributen von sensor.boobo_status
     - variables:
         name: >-
@@ -205,8 +273,21 @@ boobo_medikament_genommen:
           {% set aus_liste = (state_attr('sensor.boobo_status', 'medications') or [])
                | selectattr('id', 'eq', medication_id | int(0)) | map(attribute='name') | first | default('') %}
           {{ (a.medication.name if a.medication is defined and a.medication else '') or aus_liste or 'Medikament' }}
+        fehler: "{{ antwort is not defined or antwort.status is not defined or antwort.status >= 300 }}"
         skipped: "{{ antwort is defined and antwort.content is defined and antwort.content.skipped | default(false) == true }}"
     - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ fehler }}"
+          sequence:
+            - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen oder entfernen
+              data:
+                title: "Hat gerade nicht geklappt"
+                message: "Boobo war nicht erreichbar. In der App nachtragen."
+                data:
+                  tag: boobo-medikament
+                  channel: Boobo
+              continue_on_error: true
         - conditions:
             - condition: template
               value_template: "{{ skipped }}"

@@ -54,6 +54,31 @@
     return d.toISOString();
   }
 
+  // Schnellwahl („vor 10 min“) und „jetzt“ schreiben eine Minute ins Feld; den exakten Zeitpunkt merken wir am Feld.
+  // Sonst käme in der doppelten Stunde beim Ende der Sommerzeit eine Stunde zu früh heraus. Tippt jemand ins Feld,
+  // gilt wieder der Feldwert (clearAtExact über input/change).
+  function setAtExact(input, date) {
+    // Sekunden am Zeitstempel kürzen, nicht über setSeconds: das rechnet über die lokale Uhrzeit und landet in der
+    // doppelten Stunde wieder in der falschen
+    var ms = date.getTime();
+    var d = new Date(ms - (ms % 60000));
+    input.value = toLocalInputValue(d);
+    input._exactIso = d.toISOString();
+    input._exactValue = input.value;
+  }
+  function setAtPlain(input, date) {
+    clearAtExact(input);
+    input.value = toLocalInputValue(date);
+  }
+  function clearAtExact(input) {
+    input._exactIso = null;
+    input._exactValue = null;
+  }
+  function atIsoFromInput(input) {
+    if (input._exactIso && input._exactValue === input.value) return input._exactIso;
+    return fromLocalInputValue(input.value);
+  }
+
   function formatDuration(minutes, style) {
     // style 'rel' → "1 h 12 min" / "45 min"; style 'gap' → "2 h 50" / "45 min"
     minutes = Math.max(0, Math.round(minutes));
@@ -94,6 +119,12 @@
   // Stunden mit höchstens einer Nachkommastelle, deutsch: 6 → "6", 1.5 → "1,5"
   function formatHours(minutes) {
     var h = Math.round((minutes / 60) * 10) / 10;
+    return String(h).replace('.', ',');
+  }
+
+  // Fürs Eingabefeld: bis zu zwei Nachkommastellen, 75 → "1,25", 360 → "6"
+  function formatHoursField(minutes) {
+    var h = Math.round((minutes / 60) * 100) / 100;
     return String(h).replace('.', ',');
   }
 
@@ -225,12 +256,20 @@
         historyRefreshPending = true;
       } else {
         var feeds = (res[1] && Array.isArray(res[1].feeds)) ? res[1].feeds : [];
-        state.feedsEnd = feeds.length < feedReq;
-        state.feeds = feeds.slice(0, feedLimit);
-        applyOptional('diapers', res[2], 'diapers');
+        var mf = mergeRefreshed(feeds, feedLimit, feedReq, state.feeds, state.feedsEnd);
+        state.feeds = mf.list;
+        state.feedsEnd = mf.end;
         if (res[2] !== KEEP) {
-          state.diapersEnd = !state.diapers || state.diapers.length < diaperReq;
-          if (state.diapers) state.diapers = state.diapers.slice(0, diaperLimit);
+          var oldDiapers = state.diapers;
+          var oldDiapersEnd = state.diapersEnd;
+          applyOptional('diapers', res[2], 'diapers');
+          if (state.diapers) {
+            var md = mergeRefreshed(state.diapers, diaperLimit, diaperReq, oldDiapers, oldDiapersEnd);
+            state.diapers = md.list;
+            state.diapersEnd = md.end;
+          } else {
+            state.diapersEnd = true;
+          }
         }
       }
       applyOptional('meds', res[3], 'medications');
@@ -251,6 +290,27 @@
 
   function historyRefreshLimit(list) {
     return Math.min(HISTORY_LIMIT_MAX, Math.max(HISTORY_LIMIT, (list || []).length));
+  }
+
+  // Frische Liste vom Refresh übernehmen. Hat der Server so viele geliefert, wie er höchstens liefert (HISTORY_LIMIT_MAX),
+  // reichte eine Anfrage nicht für alles Geladene: die schon geladenen älteren Einträge hängen wir wieder an, sonst
+  // verschwänden nachgeladene frühere Tage. „Ende erreicht“ bleibt dann, wie es war.
+  function mergeRefreshed(fresh, limit, requested, old, oldEnd) {
+    var full = fresh.length >= HISTORY_LIMIT_MAX;
+    var list = fresh.slice(0, limit);
+    if (full && list.length && old && old.length) {
+      var last = list[list.length - 1];
+      list = appendUnique(list, old.filter(function (x) { return isOlderThan(x, last); }));
+    }
+    return { list: list, end: full ? !!oldEnd : fresh.length < requested };
+  }
+
+  // Reihenfolge wie beim Server: nach Zeitpunkt, bei gleichem Zeitpunkt nach id
+  function isOlderThan(x, ref) {
+    var a = new Date(x.at).getTime();
+    var b = new Date(ref.at).getTime();
+    if (a !== b) return a < b;
+    return (x.id || 0) < (ref.id || 0);
   }
 
   var KEEP = {};
@@ -424,8 +484,35 @@
     return items;
   }
 
+  // Fokus über das Neuzeichnen hinweg: Tageskopf (data-day), Zeile (data-type + data-id) oder „Frühere Tage laden“
+  var historyFocusPending = null; // Knopf war gerade gesperrt („Lädt …“) → beim nächsten Zeichnen nachholen
+  function historyFocusKey(root) {
+    var a = document.activeElement;
+    if (!a || !root.contains(a)) return null;
+    var btn = a.closest('button');
+    if (!btn) return null;
+    if (btn.id === 'history-more') return '#history-more';
+    if (btn.hasAttribute('data-day')) return '.day-head[data-day="' + btn.getAttribute('data-day') + '"]';
+    if (btn.hasAttribute('data-type') && btn.hasAttribute('data-id')) {
+      return '.row[data-type="' + btn.getAttribute('data-type') + '"][data-id="' + btn.getAttribute('data-id') + '"]';
+    }
+    return null;
+  }
+  function restoreHistoryFocus(root, key) {
+    if (!key) return;
+    var a = document.activeElement;
+    // Inzwischen woanders hingetippt → nichts stehlen
+    if (a && a !== document.body && document.body.contains(a) && !root.contains(a)) return;
+    var target = $(key, root);
+    if (!target) return;
+    if (target.disabled) { historyFocusPending = key; return; }
+    target.focus({ preventScroll: true });
+  }
+
   function renderHistory() {
     var root = $('#history');
+    var focusKey = historyFocusKey(root) || historyFocusPending;
+    historyFocusPending = null;
     root.textContent = '';
     var items = historyItems();
     if (!items.length) {
@@ -464,7 +551,7 @@
       var chev = el('span', { class: 'chev', 'aria-hidden': 'true' });
       chev.appendChild(chevronSvg());
       var head = el('button', {
-        class: 'day-head day-toggle', type: 'button',
+        class: 'day-head day-toggle', type: 'button', 'data-day': g.key,
         'aria-expanded': open ? 'true' : 'false',
         'aria-label': g.label + ', ' + countText + (open ? ' – zuklappen' : ' – aufklappen')
       }, [
@@ -486,13 +573,14 @@
 
     if (moreAvailable) {
       var more = el('button', {
-        class: 'secondary-btn history-more', type: 'button',
+        class: 'secondary-btn history-more', type: 'button', id: 'history-more',
         text: state.historyLoading ? 'Lädt …' : 'Frühere Tage laden'
       });
       more.disabled = state.historyLoading;
       more.addEventListener('click', loadMoreHistory);
       root.appendChild(more);
     }
+    restoreHistoryFocus(root, focusKey);
   }
 
   // Nächste Seite älterer Einträge holen (je Liste ab ihrem ältesten geladenen Eintrag) und anhängen
@@ -502,7 +590,9 @@
     renderHistory();
     function pageUrl(path, list) {
       var oldest = list[list.length - 1];
-      return path + '?limit=' + HISTORY_PAGE + '&before=' + encodeURIComponent(oldest.at);
+      // before_id: bei gleichem Zeitpunkt geht es hinter dieser id weiter (ältere Server ignorieren den Parameter)
+      return path + '?limit=' + HISTORY_PAGE + '&before=' + encodeURIComponent(oldest.at) +
+        '&before_id=' + encodeURIComponent(oldest.id);
     }
     var feeds = state.feeds || [];
     var diapers = state.diapers || [];
@@ -546,7 +636,7 @@
   function feedRow(it) {
     var f = it.data;
     var row = el('button', {
-      class: 'row side-' + f.side, type: 'button', 'data-id': String(f.id),
+      class: 'row side-' + f.side, type: 'button', 'data-id': String(f.id), 'data-type': 'feed',
       'aria-label': fmtTime.format(it.date) + ' ' + (SIDE_NAMES[f.side] || f.side) + (f.note ? ', ' + f.note : '') + ' – bearbeiten'
     }, [
       el('span', { class: 'dot', text: SIDE_LETTERS[f.side] || '?' }),
@@ -567,7 +657,7 @@
     var dot = el('span', { class: 'dot' });
     dot.appendChild(dropSvg(w.kind === 'dirty', 16));
     var row = el('button', {
-      class: 'row row-diaper', type: 'button', 'data-id': String(w.id),
+      class: 'row row-diaper', type: 'button', 'data-id': String(w.id), 'data-type': 'diaper',
       'aria-label': fmtTime.format(it.date) + ' Windel ' + kindText + (w.note ? ', ' + w.note : '') + ' – bearbeiten'
     }, [
       dot,
@@ -794,9 +884,33 @@
     });
   }
 
+  // Bekannte Servermeldungen (server.js, englisch) → kurze deutsche Sätze. $1/$2 = Fundstellen im Muster.
+  var SERVER_ERRORS = [
+    [/^duplicate$/i, 'Um diese Zeit ist schon etwas notiert.'],
+    [/in the future/i, 'Diese Uhrzeit liegt noch vor uns.'],
+    [/must not be before 2000/i, 'Das Datum liegt zu weit zurück.'],
+    [/not a valid date|must be a date|ISO-8601 date/i, 'Das Datum passt noch nicht.'],
+    [/Request body too large/i, 'Das ist zu viel auf einmal.'],
+    [/Too many imported references/i, 'Mehr Kurven passen nicht hinein. Erst eine löschen.'],
+    [/not found/i, 'Das gibt es nicht mehr. Vielleicht hat das andere Handy es schon geändert.'],
+    [/must be (?:an integer )?between (\d+) and (\d+)/i, 'Erlaubt sind Werte von $1 bis $2.'],
+    [/name must be 1 to (\d+) characters/i, 'Der Name darf höchstens $1 Zeichen haben.'],
+    [/must be at most (\d+) characters/i, 'Höchstens $1 Zeichen bitte.'],
+    [/At least one of weight_g, length_cm, hc_cm/i, 'Bitte mindestens einen Messwert eintragen.'],
+    [/Method not allowed/i, 'Das kann der Zuhause-Server noch nicht.']
+  ];
+  // Sieht die Meldung englisch aus? Deutsche (z. B. aus dem Kurven-Import: „Spalte(n) fehlen“) gehen unverändert durch.
+  var ENGLISH_RE = /\b(must|is not|not found|invalid|failed|required|cannot|too many|at least|at most|one of|allowed|body|request|reference|forbidden)\b/i;
   function errorText(err) {
     if (err instanceof TypeError) return 'Gerade keine Verbindung zum Zuhause-Server';
-    return err && err.message ? err.message : 'Unbekannter Fehler';
+    var msg = err && err.message ? String(err.message) : '';
+    if (!msg) return 'Unbekannter Fehler';
+    for (var i = 0; i < SERVER_ERRORS.length; i++) {
+      var m = SERVER_ERRORS[i][0].exec(msg);
+      if (m) return SERVER_ERRORS[i][1].replace(/\$(\d)/g, function (_, n) { return m[Number(n)] || ''; });
+    }
+    if (ENGLISH_RE.test(msg)) return 'Das hat gerade nicht geklappt.';
+    return msg;
   }
 
   // ---------- Segmented control ----------
@@ -987,7 +1101,7 @@
     var dlg = $('#dlg-add');
     var form = $('#form-add');
     var now = new Date();
-    form.at.value = toLocalInputValue(now);
+    setAtExact(form.at, now);
     form.at.max = toLocalInputValue(new Date(now.getTime() + 5 * 60000));
     form.note.value = '';
     setChip($('#add-chips'), null);
@@ -1016,10 +1130,13 @@
         if (!c) return;
         var min = parseInt(c.getAttribute('data-min'), 10);
         if (isNaN(min)) return;
-        form.at.value = toLocalInputValue(new Date(Date.now() - min * 60000));
+        setAtExact(form.at, new Date(Date.now() - min * 60000));
         setChip(box, min);
       });
-      form.at.addEventListener('input', function () { setChip(box, null); });
+      // Von Hand geändert → Chip aus und gemerkten exakten Zeitpunkt verwerfen
+      ['input', 'change'].forEach(function (ev) {
+        form.at.addEventListener(ev, function () { clearAtExact(form.at); setChip(box, null); });
+      });
     });
   }
 
@@ -1027,7 +1144,7 @@
     e.preventDefault();
     var form = $('#form-add');
     var side = segGet($('.segmented', form));
-    var atIso = fromLocalInputValue(form.at.value);
+    var atIso = atIsoFromInput(form.at);
     if (!side) { showToast('Bitte eine Seite wählen', { error: true, duration: 4000 }); return; }
     if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
     var body = { side: side, at: atIso };
@@ -1056,7 +1173,7 @@
     var dlg = $('#dlg-edit');
     var form = $('#form-edit');
     form.id.value = feed.id;
-    form.at.value = toLocalInputValue(new Date(feed.at));
+    setAtPlain(form.at, new Date(feed.at));
     form.at.max = toLocalInputValue(new Date(Date.now() + 5 * 60000));
     form.note.value = feed.note || '';
     segSet($('.segmented', form), feed.side);
@@ -1070,7 +1187,7 @@
     if (!editing) return;
     var form = $('#form-edit');
     var side = segGet($('.segmented', form));
-    var atIso = fromLocalInputValue(form.at.value);
+    var atIso = atIsoFromInput(form.at);
     if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
     var note = form.note.value.trim();
     var patch = {};
@@ -1260,7 +1377,8 @@
   var editingDiaper = null;
   function openDiaperDialog(kind, d, isNew) {
     var form = $('#form-diaper');
-    form.at.value = toLocalInputValue(d);
+    // Nachtragen: exakten Zeitpunkt merken; Bearbeiten: nur der Feldwert zählt (unverändert = nicht senden)
+    if (isNew) setAtExact(form.at, d); else setAtPlain(form.at, d);
     form.at.max = toLocalInputValue(new Date(Date.now() + 5 * 60000));
     segSet($('.segmented', form), kind === 'dirty' ? 'dirty' : 'wet');
     $('#diaper-title').textContent = isNew ? 'Windel nachtragen' : 'Windel';
@@ -1284,7 +1402,7 @@
     e.preventDefault();
     var form = $('#form-diaper');
     var kind = segGet($('.segmented', form));
-    var atIso = fromLocalInputValue(form.at.value);
+    var atIso = atIsoFromInput(form.at);
     if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
     var submit = $('#btn-diaper-save');
     var done;
@@ -1421,7 +1539,7 @@
     var form = $('#form-intake');
     $('#intake-title').textContent = 'Einnahme';
     $('#intake-med').textContent = intakeLabel(it);
-    form.at.value = toLocalInputValue(toDate(it.at) || new Date());
+    setAtPlain(form.at, toDate(it.at) || new Date());
     $('#btn-intake-save').textContent = 'Speichern';
     $('#btn-intake-delete').hidden = false;
     showTimeChips($('#intake-chips'), false);
@@ -1434,7 +1552,7 @@
     var form = $('#form-intake');
     $('#intake-title').textContent = 'Nachtragen';
     $('#intake-med').textContent = intakeLabel(m);
-    form.at.value = toLocalInputValue(new Date());
+    setAtExact(form.at, new Date());
     $('#btn-intake-save').textContent = 'Notieren';
     $('#btn-intake-delete').hidden = true;
     showTimeChips($('#intake-chips'), true);
@@ -1449,7 +1567,7 @@
   function submitIntake(e) {
     e.preventDefault();
     var form = $('#form-intake');
-    var atIso = fromLocalInputValue(form.at.value);
+    var atIso = atIsoFromInput(form.at);
     if (!atIso) { showToast('Ungültige Zeit', { error: true, duration: 4000 }); return; }
     var submit = $('#btn-intake-save');
     var done;
@@ -1549,6 +1667,7 @@
   }
 
   var editingMed = null; // null = neu
+  var medGapShown = '';  // Feldwert „Abstand“ beim Öffnen: unverändert → min_gap_minutes bleibt, wie es war
   function openMedEdit(m) {
     editingMed = m || null;
     var form = $('#form-med');
@@ -1557,7 +1676,8 @@
     f.med_name.value = m ? (m.name || '') : '';
     f.med_dose.value = m ? (m.dose || '') : '';
     f.med_max.value = m && isNum(m.max_per_day) ? String(m.max_per_day) : '';
-    f.med_gap.value = m && isNum(m.min_gap_minutes) && m.min_gap_minutes > 0 ? formatHours(m.min_gap_minutes) : '';
+    f.med_gap.value = m && isNum(m.min_gap_minutes) && m.min_gap_minutes > 0 ? formatHoursField(m.min_gap_minutes) : '';
+    medGapShown = f.med_gap.value;
     $('#btn-med-delete').hidden = !m;
     updateMedHint();
     openDialog($('#dlg-med'));
@@ -1601,6 +1721,10 @@
     }
     var body = { name: name, dose: dose || null, max_per_day: max, min_gap_minutes: Math.round(gapH * 60) };
     var isNew = !editingMed;
+    // Abstand nicht angefasst → Minuten unverändert lassen (die Stundenanzeige ist gerundet, z. B. 75 min)
+    if (!isNew && f.med_gap.value === medGapShown) {
+      body.min_gap_minutes = isNum(editingMed.min_gap_minutes) && editingMed.min_gap_minutes > 0 ? editingMed.min_gap_minutes : 0;
+    }
     if (isNew) {
       if (!body.dose) delete body.dose;
       if (body.max_per_day === null) delete body.max_per_day;
@@ -1732,12 +1856,16 @@
     return '/api/growth' + (q.length ? '?' + q.join('&') : '');
   }
 
+  var growthSeq = 0; // wie stats.seq: Kurve oder Zeitraum schnell gewechselt → ältere Antworten verwerfen
   function loadGrowth() {
+    var seq = ++growthSeq;
     return api('GET', growthQuery()).then(function (g) {
+      if (seq !== growthSeq) return state.growth;
       state.growth = g;
       renderGrowthSheet();
       return g;
     }).catch(function (err) {
+      if (seq !== growthSeq) return;
       showToast(errorText(err), { error: true, duration: 6000 });
     });
   }

@@ -644,6 +644,20 @@ describe('Medikamente', () => {
     assert.equal((await api('DELETE', `/api/medications/${id}`)).status, 204);
   });
 
+  test('more intakes than max_per_day → next_possible_at waits until enough have left the window', async () => {
+    const { api } = ctx;
+    const med = (await api('POST', '/api/medications', { name: 'Vielnehmer', max_per_day: 2, min_gap_minutes: 0 })).json.medication;
+    const t0 = Date.now();
+    const times = [t0 - 20 * HOUR, t0 - 18 * HOUR, t0 - 16 * HOUR];
+    for (const t of times) assert.equal((await api('POST', `/api/medications/${med.id}/intakes`, { at: iso(t), on_duplicate: 'force' })).status, 201);
+    const m = (await api('GET', '/api/medications')).json.medications.find((x) => x.id === med.id);
+    assert.equal(m.taken_24h, 3);
+    assert.equal(m.remaining_24h, 0);
+    // Erst wenn zwei Einnahmen aus dem Fenster gefallen sind, ist wieder eine erlaubt: zweitälteste + 24 h
+    assert.equal(m.next_possible_at, iso(times[1] + 24 * HOUR));
+    assert.equal((await api('DELETE', `/api/medications/${med.id}`)).status, 204);
+  });
+
   test('DELETE medication cascades to its intakes', async () => {
     const { api } = ctx;
     const med = (await api('POST', '/api/medications', { name: 'Kurzzeit', min_gap_minutes: 30 })).json.medication;

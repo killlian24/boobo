@@ -5,7 +5,10 @@
 # dieser Datei einfügen → Speichern.
 #
 # Die Erinnerung kommt, wenn ein Medikament wieder genommen werden darf
-# (binary_sensor.boobo_mama_medikament geht auf „on“). Den Mindestabstand, die Höchstzahl pro Tag
+# (binary_sensor.boobo_mama_medikament geht auf „on“) und auch dann, wenn bei schon „on“ ein weiteres
+# Medikament dazukommt (Änderung von sensor.boobo_mama_medikament_text; es zählt nur, was neu in der
+# Liste steht). Die Meldung nutzt immer denselben `tag`, ersetzt also die vorherige statt zu stapeln.
+# Den Mindestabstand, die Höchstzahl pro Tag
 # und die Regel „erste Einnahme wird nie erinnert, nach 36 h ohne Einnahme Ruhe“ entscheidet
 # der Server; hier wird nur noch freundlich Bescheid gesagt.
 #
@@ -22,23 +25,45 @@
 alias: "Boobo: Kurz an dich denken"
 description: "Sagt Mama Bescheid, wenn ein Medikament wieder genommen werden darf (nicht nachts)."
 mode: single
+max_exceeded: silent   # beide Trigger können gleichzeitig feuern; die zweite Meldung wäre identisch
 
 triggers:
   - trigger: state
     entity_id: binary_sensor.boobo_mama_medikament
     to: "on"
+    id: neu
+
+  # Wird ein weiteres Medikament wieder möglich, während der Sensor schon „on“ hält, ändert sich nur der
+  # Text („Paracetamol 1 g“ → „Paracetamol 1 g, Ibuprofen 400 mg“). Darum lauscht ein zweiter Trigger darauf.
+  # Ohne `to:`, dafür ohne unknown/unavailable als Ausgangszustand (kein Fehlalarm nach einem Neustart).
+  - trigger: state
+    entity_id: sensor.boobo_mama_medikament_text
+    not_from: ["unknown", "unavailable"]
+    id: weitere
 
   # Optional: Wiederholung alle 60 min, solange noch ein Medikament „geht wieder“ anzeigt.
-  # Zum Aktivieren die drei Zeilen einkommentieren (die Nachtruhe-Condition gilt dann auch hier):
+  # Zum Aktivieren die drei Zeilen einkommentieren (die Nachtruhe-Condition gilt dann auch hier;
+  # dass noch ein Medikament „on“ ist, prüft die Condition unten schon):
   # - trigger: time_pattern
   #   minutes: "0"
   #   id: wiederholung
-  # Und zusätzlich unter `conditions:` ergänzen, damit die Wiederholung nur läuft, solange es nötig ist:
-  #   - condition: state
-  #     entity_id: binary_sensor.boobo_mama_medikament
-  #     state: "on"
 
 conditions:
+  # Es muss gerade wirklich ein Medikament möglich sein (der Text wird auch leer, wenn eines genommen wurde).
+  - condition: state
+    entity_id: binary_sensor.boobo_mama_medikament
+    state: "on"
+
+  # Beim Text-Trigger nur melden, wenn etwas Neues dazugekommen ist, nicht wenn eines weggefallen ist.
+  - condition: or
+    conditions:
+      - condition: trigger
+        id: ["neu", "wiederholung"]
+      - condition: template
+        value_template: >-
+          {% set vorher = (trigger.from_state.state if trigger.from_state else '').split(', ') %}
+          {{ trigger.to_state.state.split(', ') | reject('eq', '') | reject('in', vorher) | list | length > 0 }}
+
   # Nachtruhe: nur zwischen 06:30 und 23:00 benachrichtigen (after < before = Tagesfenster)
   - condition: time
     after: "06:30:00"
