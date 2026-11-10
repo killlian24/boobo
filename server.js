@@ -12,6 +12,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import * as growth from './lib/growth.js';
+import * as reminders from './lib/reminders.js';
+import * as webpush from './lib/webpush.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -43,6 +45,16 @@ const MED_DOSE_MAX = 40;
 const MED_MAX_PER_DAY_MIN = 1;
 const MED_MAX_PER_DAY_MAX = 24;
 const MED_GAP_MAX = 10080;
+// Erweiterung 7: Erinnerungen und Push
+const REMINDER_TIMES_MAX = 12;
+const REMINDER_AFTER_MAX = 10080;
+const REMINDER_REPEAT_MAX = 720;
+const REMINDER_SNOOZE_DEFAULT = 15;
+const REMINDER_SNOOZE_MAX = 720;
+const REMINDER_FIELDS = ['reminder_mode', 'reminder_times', 'reminder_after_minutes', 'reminder_repeat_minutes'];
+const PUSH_SUBSCRIPTIONS_MAX = 20;
+const PUSH_TICK_MS = 30 * 1000;
+const PUSH_LABEL_MAX = 60;
 const MED_SEEDS = [
   { name: 'Paracetamol', dose: '1 g', max_per_day: 4, min_gap_minutes: 360 },
   { name: 'Ibuprofen', dose: '400 mg', max_per_day: 4, min_gap_minutes: 360 },
@@ -222,6 +234,32 @@ function openDatabase(dataDir, defaultIntervalMinutes) {
     CREATE INDEX IF NOT EXISTS idx_med_intakes_med_at ON med_intakes(medication_id, at);
     CREATE INDEX IF NOT EXISTS idx_med_intakes_at ON med_intakes(at);
   `);
+  // Erweiterung 7: Erinnerungen (Spalten an medications nachrüsten) und Push-Anmeldungen
+  const medColumns = new Set(db.prepare('PRAGMA table_info(medications)').all().map((c) => c.name));
+  const addMedColumn = (name, decl) => {
+    if (!medColumns.has(name)) db.exec(`ALTER TABLE medications ADD COLUMN ${name} ${decl}`);
+  };
+  addMedColumn('reminder_mode', "TEXT NOT NULL DEFAULT 'off'");
+  addMedColumn('reminder_times', 'TEXT');
+  addMedColumn('reminder_after_minutes', 'INTEGER');
+  addMedColumn('reminder_repeat_minutes', 'INTEGER NOT NULL DEFAULT 0');
+  addMedColumn('reminder_since', 'TEXT');
+  addMedColumn('reminder_snoozed_until', 'TEXT');
+  addMedColumn('reminder_skipped_slot', 'TEXT');
+  addMedColumn('reminder_sent_ping', 'TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      label TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_ok_at TEXT,
+      failures INTEGER NOT NULL DEFAULT 0
+    );
+  `);
   // Erweiterung 4: Wachstum (Messungen und importierte Referenzkurven)
   db.exec(`
     CREATE TABLE IF NOT EXISTS measurements (
@@ -335,6 +373,31 @@ function createRepo(db) {
     medNthOldest: db.prepare(
       'SELECT at FROM med_intakes WHERE medication_id = ? AND at > ? ORDER BY at ASC, id ASC LIMIT 1 OFFSET ?',
     ),
+    medReminderUpdate: db.prepare(
+      'UPDATE medications SET reminder_mode = ?, reminder_times = ?, reminder_after_minutes = ?, ' +
+        'reminder_repeat_minutes = ?, reminder_since = ?, reminder_snoozed_until = NULL, reminder_skipped_slot = NULL, ' +
+        'reminder_sent_ping = NULL, updated_at = ? WHERE id = ?',
+    ),
+    medSnooze: db.prepare('UPDATE medications SET reminder_snoozed_until = ?, updated_at = ? WHERE id = ?'),
+    medSkip: db.prepare(
+      'UPDATE medications SET reminder_skipped_slot = ?, reminder_snoozed_until = NULL, updated_at = ? WHERE id = ?',
+    ),
+    medResume: db.prepare(
+      'UPDATE medications SET reminder_skipped_slot = NULL, reminder_snoozed_until = NULL, updated_at = ? WHERE id = ?',
+    ),
+    medSentPing: db.prepare('UPDATE medications SET reminder_sent_ping = ? WHERE id = ?'),
+
+    pushAll: db.prepare('SELECT * FROM push_subscriptions ORDER BY id ASC'),
+    pushCount: db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions'),
+    pushByEndpoint: db.prepare('SELECT * FROM push_subscriptions WHERE endpoint = ?'),
+    pushUpsert: db.prepare(
+      'INSERT INTO push_subscriptions (endpoint, p256dh, auth, label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ' +
+        'ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, ' +
+        'label = COALESCE(excluded.label, push_subscriptions.label), updated_at = excluded.updated_at, failures = 0',
+    ),
+    pushRemove: db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?'),
+    pushOk: db.prepare('UPDATE push_subscriptions SET last_ok_at = ?, failures = 0 WHERE id = ?'),
+    pushFail: db.prepare('UPDATE push_subscriptions SET failures = failures + 1 WHERE id = ?'),
 
     intakeInsert: db.prepare(
       'INSERT INTO med_intakes (medication_id, at, note, created_at) VALUES (?, ?, ?, ?)',
@@ -497,6 +560,84 @@ function createRepo(db) {
     // Einnahme im Fenster, nach der (von alt nach neu gezählt) `skip` weitere liegen.
     medicationNthOldest(id, dayAgoIso, skip) {
       return stmts.medNthOldest.get(id, dayAgoIso, skip)?.at ?? null;
+    },
+
+    // --- reminders (Erweiterung 7) ---
+    updateReminder(id, r, sinceIso) {
+      stmts.medReminderUpdate.run(
+        r.reminder_mode,
+        r.reminder_times.length ? JSON.stringify(r.reminder_times) : null,
+        r.reminder_after_minutes,
+        r.reminder_repeat_minutes,
+        sinceIso,
+        nowIso(),
+        id,
+      );
+      return stmts.medById.get(id);
+    },
+    snoozeReminder(id, untilIso) {
+      stmts.medSnooze.run(untilIso, nowIso(), id);
+      return stmts.medById.get(id);
+    },
+    skipReminder(id, slotIso) {
+      stmts.medSkip.run(slotIso, nowIso(), id);
+      return stmts.medById.get(id);
+    },
+    resumeReminder(id) {
+      stmts.medResume.run(nowIso(), id);
+      return stmts.medById.get(id);
+    },
+    setReminderSentPing(id, ping) {
+      stmts.medSentPing.run(ping, id);
+    },
+    getReminderQuiet() {
+      const row = stmts.getSetting.get('reminder_quiet');
+      if (!row) return null;
+      try {
+        const q = JSON.parse(row.value);
+        return q && typeof q.from === 'string' && typeof q.to === 'string' ? { from: q.from, to: q.to } : null;
+      } catch {
+        return null;
+      }
+    },
+    setReminderQuiet(quiet) {
+      stmts.setSetting.run('reminder_quiet', JSON.stringify(quiet ? { from: quiet.from, to: quiet.to } : null));
+    },
+    getVapidKeys() {
+      const row = stmts.getSetting.get('vapid_keys');
+      if (!row) return null;
+      try {
+        const k = JSON.parse(row.value);
+        return k && typeof k.publicKey === 'string' && typeof k.privateKey === 'string' ? k : null;
+      } catch {
+        return null;
+      }
+    },
+    setVapidKeys(keys) {
+      stmts.setSetting.run('vapid_keys', JSON.stringify({ publicKey: keys.publicKey, privateKey: keys.privateKey }));
+    },
+
+    // --- push subscriptions ---
+    allPushSubscriptions() {
+      return stmts.pushAll.all();
+    },
+    countPushSubscriptions() {
+      return Number(stmts.pushCount.get().n);
+    },
+    pushSubscriptionByEndpoint(endpoint) {
+      return stmts.pushByEndpoint.get(endpoint) ?? null;
+    },
+    upsertPushSubscription({ endpoint, p256dh, auth, label }) {
+      const ts = nowIso();
+      stmts.pushUpsert.run(endpoint, p256dh, auth, label, ts, ts);
+      return stmts.pushByEndpoint.get(endpoint);
+    },
+    removePushSubscription(endpoint) {
+      return stmts.pushRemove.run(endpoint).changes > 0;
+    },
+    touchPushSubscription(id, ok) {
+      if (ok) stmts.pushOk.run(nowIso(), id);
+      else stmts.pushFail.run(id);
     },
 
     // --- medication intakes ---
@@ -758,6 +899,143 @@ function validateSortOrder(value) {
   return value;
 }
 
+// --- Erweiterung 7: Erinnerungen und Push ---
+
+function validateReminderMode(value) {
+  if (typeof value !== 'string' || !reminders.REMINDER_MODES.has(value)) {
+    throw new HttpError(400, 'reminder_mode must be one of: off, times, after_last');
+  }
+  return value;
+}
+
+function validateReminderTimes(value) {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value) || value.length > REMINDER_TIMES_MAX) {
+    throw new HttpError(400, `reminder_times must be an array of at most ${REMINDER_TIMES_MAX} "HH:MM" strings`);
+  }
+  const out = [];
+  for (const v of value) {
+    const n = reminders.normalizeHHMM(v);
+    if (!n) throw new HttpError(400, 'reminder_times entries must be "HH:MM"');
+    if (!out.includes(n)) out.push(n);
+  }
+  return out.sort();
+}
+
+function validateReminderAfter(value) {
+  if (value === null || value === undefined) return null;
+  if (!Number.isInteger(value) || value < 1 || value > REMINDER_AFTER_MAX) {
+    throw new HttpError(400, `reminder_after_minutes must be an integer between 1 and ${REMINDER_AFTER_MAX}, or null`);
+  }
+  return value;
+}
+
+function validateReminderRepeat(value) {
+  if (value === null || value === undefined) return 0;
+  if (!Number.isInteger(value) || value < 0 || value > REMINDER_REPEAT_MAX) {
+    throw new HttpError(400, `reminder_repeat_minutes must be an integer between 0 and ${REMINDER_REPEAT_MAX}`);
+  }
+  return value;
+}
+
+function reminderOf(med) {
+  return {
+    reminder_mode: med.reminder_mode || 'off',
+    reminder_times: parseTimesJson(med.reminder_times),
+    reminder_after_minutes: med.reminder_after_minutes === undefined ? null : med.reminder_after_minutes,
+    reminder_repeat_minutes: Number(med.reminder_repeat_minutes) || 0,
+  };
+}
+
+// Erinnerungsfelder aus einem Body, fehlende Felder bleiben wie in `current`.
+function reminderFromBody(body, current, minGapMinutes) {
+  const next = {
+    reminder_mode: 'reminder_mode' in body ? validateReminderMode(body.reminder_mode) : current.reminder_mode,
+    reminder_times: 'reminder_times' in body ? validateReminderTimes(body.reminder_times) : current.reminder_times,
+    reminder_after_minutes:
+      'reminder_after_minutes' in body ? validateReminderAfter(body.reminder_after_minutes) : current.reminder_after_minutes,
+    reminder_repeat_minutes:
+      'reminder_repeat_minutes' in body ? validateReminderRepeat(body.reminder_repeat_minutes) : current.reminder_repeat_minutes,
+  };
+  if (next.reminder_mode === 'times' && !next.reminder_times.length) {
+    throw new HttpError(400, 'reminder_times must not be empty when reminder_mode is "times"');
+  }
+  if (next.reminder_mode === 'after_last' && !(next.reminder_after_minutes > 0) && !(minGapMinutes > 0)) {
+    throw new HttpError(400, 'reminder_after_minutes or min_gap_minutes must be set when reminder_mode is "after_last"');
+  }
+  return next;
+}
+
+function sameReminder(a, b) {
+  return a.reminder_mode === b.reminder_mode &&
+    a.reminder_after_minutes === b.reminder_after_minutes &&
+    a.reminder_repeat_minutes === b.reminder_repeat_minutes &&
+    JSON.stringify(a.reminder_times) === JSON.stringify(b.reminder_times);
+}
+
+function validateQuietTime(value, field) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = reminders.normalizeHHMM(value);
+  if (!n) throw new HttpError(400, `${field} must be "HH:MM" or null`);
+  return n;
+}
+
+function validateSnoozeMinutes(value) {
+  if (value === null || value === undefined) return REMINDER_SNOOZE_DEFAULT;
+  if (!Number.isInteger(value) || value < 1 || value > REMINDER_SNOOZE_MAX) {
+    throw new HttpError(400, `minutes must be an integer between 1 and ${REMINDER_SNOOZE_MAX}`);
+  }
+  return value;
+}
+
+function validatePushSubscription(body) {
+  const endpoint = body.endpoint;
+  let parsed;
+  try {
+    parsed = typeof endpoint === 'string' && endpoint.length <= 2048 ? new URL(endpoint) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) throw new HttpError(400, 'endpoint must be a URL string');
+  const localHttp = parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+  if (parsed.protocol !== 'https:' && !localHttp) throw new HttpError(400, 'endpoint must be an https URL');
+  const keys = body.keys;
+  if (!keys || typeof keys !== 'object') throw new HttpError(400, 'keys.p256dh and keys.auth are required');
+  const { p256dh, auth } = keys;
+  if (typeof p256dh !== 'string' || Buffer.from(p256dh, 'base64url').length !== 65) {
+    throw new HttpError(400, 'keys.p256dh must be a base64url P-256 public key (65 bytes)');
+  }
+  if (typeof auth !== 'string' || Buffer.from(auth, 'base64url').length !== 16) {
+    throw new HttpError(400, 'keys.auth must be 16 base64url bytes');
+  }
+  let label = null;
+  if (body.label !== undefined && body.label !== null) {
+    if (typeof body.label !== 'string') throw new HttpError(400, 'label must be a string');
+    label = body.label.trim().slice(0, PUSH_LABEL_MAX) || null;
+  }
+  return { endpoint, p256dh, auth, label };
+}
+
+function pushSubscriptionView(row) {
+  return {
+    id: row.id,
+    endpoint: row.endpoint,
+    label: row.label,
+    created_at: row.created_at,
+    last_ok_at: row.last_ok_at,
+    failures: Number(row.failures) || 0,
+  };
+}
+
+function settingsView(repo) {
+  const quiet = repo.getReminderQuiet();
+  return {
+    interval_minutes: repo.getInterval(),
+    reminder_quiet_from: quiet ? quiet.from : null,
+    reminder_quiet_to: quiet ? quiet.to : null,
+  };
+}
+
 function validateInterval(value) {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
     throw new HttpError(400, 'interval_minutes must be an integer');
@@ -890,7 +1168,8 @@ function buildState(repo, timeZone) {
   const midnight = localMidnight(now, timeZone).toISOString();
   const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
 
-  const medications = medicationViews(repo, now.getTime()).filter((m) => m.active);
+  const medications = medicationViews(repo, now.getTime(), timeZone).filter((m) => m.active);
+  const pendingReminders = medications.filter((m) => m.reminder.status === 'pending');
 
   return {
     now: nowIsoStr,
@@ -913,8 +1192,24 @@ function buildState(repo, timeZone) {
       possible_now: m.possible_now,
       next_possible_at: m.next_possible_at,
       due: m.due,
+      reminder: {
+        status: m.reminder.status,
+        slot_at: m.reminder.slot_at,
+        ping_at: m.reminder.ping_at,
+        next_at: m.reminder.next_at,
+      },
     })),
-    medications_due: medications.filter((m) => m.due).map((m) => (m.dose ? `${m.name} ${m.dose}` : m.name)),
+    medications_due: medications.filter((m) => m.due).map(medLabel),
+    // Erweiterung 7: aktive Erinnerungen („Zeit für …“), für Popup und Home Assistant
+    reminders: pendingReminders.map((m) => ({
+      id: m.id,
+      name: m.name,
+      dose: m.dose,
+      slot_at: m.reminder.slot_at,
+      ping_at: m.reminder.ping_at,
+    })),
+    reminders_text: pendingReminders.map(medLabel).join(', '),
+    reminder_ping: pendingReminders.reduce((acc, m) => (acc === null || m.reminder.ping_at > acc ? m.reminder.ping_at : acc), null),
   };
 }
 
@@ -1128,7 +1423,7 @@ function buildStats(repo, timeZone, rangeDays) {
 }
 
 // Medication with its status, see docs/API.md, Erweiterung 2 §4 „Statusberechnung“.
-function medicationView(repo, med, nowMs) {
+function medicationView(repo, med, nowMs, timeZone = resolveTimeZone()) {
   const dayAgoIso = new Date(nowMs - DAY_MS).toISOString();
   const stats = repo.medicationStats(med.id, dayAgoIso);
   const lastAt = stats.last_at ?? null;
@@ -1150,6 +1445,27 @@ function medicationView(repo, med, nowMs) {
   if (nextMs !== null && nextMs <= nowMs) nextMs = null;
   const possibleNow = nextMs === null;
   const active = Number(med.active) !== 0;
+  const nextPossibleAt = possibleNow ? null : new Date(nextMs).toISOString();
+
+  // Erweiterung 7: Erinnerung (lib/reminders.js)
+  const reminder = reminders.computeReminder({
+    mode: med.reminder_mode || 'off',
+    times: parseTimesJson(med.reminder_times),
+    afterMinutes: med.reminder_after_minutes === null || med.reminder_after_minutes === undefined
+      ? null
+      : Number(med.reminder_after_minutes),
+    gapMinutes: Number(med.min_gap_minutes),
+    repeatMinutes: Number(med.reminder_repeat_minutes) || 0,
+    since: med.reminder_since,
+    snoozedUntil: med.reminder_snoozed_until,
+    skippedSlot: med.reminder_skipped_slot,
+    lastAt,
+    nextPossibleAt,
+    active,
+    nowMs,
+    timeZone,
+    quiet: repo.getReminderQuiet(),
+  });
 
   return {
     id: med.id,
@@ -1163,14 +1479,129 @@ function medicationView(repo, med, nowMs) {
     taken_24h: taken,
     remaining_24h: remaining,
     possible_now: possibleNow,
-    next_possible_at: possibleNow ? null : new Date(nextMs).toISOString(),
+    next_possible_at: nextPossibleAt,
     minutes_until_possible: possibleNow ? null : Math.ceil((nextMs - nowMs) / MINUTE_MS),
     due: active && possibleNow && lastMs !== null && nowMs - lastMs < MED_DUE_WINDOW_MS,
+    reminder,
   };
 }
 
-function medicationViews(repo, nowMs) {
-  return repo.allMedications().map((med) => medicationView(repo, med, nowMs));
+function medicationViews(repo, nowMs, timeZone) {
+  return repo.allMedications().map((med) => medicationView(repo, med, nowMs, timeZone));
+}
+
+function parseTimesJson(raw) {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function medLabel(m) {
+  return m.dose ? `${m.name} ${m.dose}` : m.name;
+}
+
+// „A“, „A und B“, „A, B und C“
+function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}`;
+}
+
+function hhmmInZone(ms, timeZone) {
+  const p = reminders.wallClock(ms, timeZone);
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+}
+
+// Text der Push-Nachricht: beim ersten Mal „Zeit für …“, bei Wiederholungen „… wartet noch“.
+function reminderPayload(fresh, pending, timeZone) {
+  const names = joinNames(pending.map(medLabel));
+  const firstTime = fresh.some((v) => v.reminder.ping_at === v.reminder.slot_at);
+  const earliestSlot = pending.reduce((acc, v) => (acc === null || v.reminder.slot_at < acc ? v.reminder.slot_at : acc), null);
+  const since = earliestSlot ? hhmmInZone(Date.parse(earliestSlot), timeZone) : null;
+  const body = firstTime
+    ? `Zeit für ${names}.`
+    : `${names} ${pending.length > 1 ? 'warten' : 'wartet'} noch${since ? ` · seit ${since}` : ''}.`;
+  return {
+    type: 'reminder',
+    title: 'Kurz an dich denken',
+    body,
+    tag: 'boobo-mama',
+    url: '/',
+    ping: pending.reduce((acc, v) => (acc === null || v.reminder.ping_at > acc ? v.reminder.ping_at : acc), null),
+    medications: pending.map((v) => ({ id: v.id, name: v.name, dose: v.dose, slot_at: v.reminder.slot_at, ping_at: v.reminder.ping_at })),
+  };
+}
+
+// Schickt Erinnerungen per Web Push an alle angemeldeten Handys (docs/API.md, Erweiterung 7 §3).
+function createPushSender({ repo, timeZone, log, subject, fetchImpl }) {
+  let keys = repo.getVapidKeys();
+  if (!keys) {
+    keys = webpush.generateVapidKeys();
+    repo.setVapidKeys(keys);
+    log('Push: neues VAPID-Schlüsselpaar erzeugt');
+  }
+  let ticking = false;
+
+  async function send(subs, payload) {
+    let sent = 0;
+    let failed = 0;
+    for (const sub of subs) {
+      try {
+        const r = await webpush.sendPush(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+          { subject, publicKey: keys.publicKey, privateKey: keys.privateKey, fetchImpl },
+        );
+        if (r.ok) {
+          sent++;
+          repo.touchPushSubscription(sub.id, true);
+        } else if (r.gone) {
+          failed++;
+          repo.removePushSubscription(sub.endpoint);
+          log(`Push: Anmeldung ${sub.id} (${sub.label || 'ohne Namen'}) abgemeldet, Dienst meldet ${r.status}`);
+        } else {
+          failed++;
+          repo.touchPushSubscription(sub.id, false);
+          log(`Push: Anmeldung ${sub.id} antwortet ${r.status}`);
+        }
+      } catch (err) {
+        failed++;
+        repo.touchPushSubscription(sub.id, false);
+        log(`Push: Anmeldung ${sub.id} fehlgeschlagen – ${err && err.message ? err.message : err}`);
+      }
+    }
+    return { sent, failed };
+  }
+
+  // Alle 30 s: Welche Erinnerung hat einen neuen Ping, der noch nicht verschickt wurde?
+  async function tick(nowMs = Date.now()) {
+    if (ticking) return null;
+    ticking = true;
+    try {
+      const pending = [];
+      const fresh = [];
+      for (const med of repo.allMedications()) {
+        const view = medicationView(repo, med, nowMs, timeZone);
+        if (view.reminder.status !== 'pending') continue;
+        pending.push(view);
+        if (med.reminder_sent_ping !== view.reminder.ping_at) fresh.push(view);
+      }
+      if (!fresh.length) return { sent: 0, failed: 0, medications: [], payload: null };
+      // Erst merken, dann schicken: ein langsamer Push-Dienst darf nicht zu Doppelmeldungen führen
+      for (const v of fresh) repo.setReminderSentPing(v.id, v.reminder.ping_at);
+      const payload = reminderPayload(fresh, pending, timeZone);
+      const subs = repo.allPushSubscriptions();
+      const result = subs.length ? await send(subs, payload) : { sent: 0, failed: 0 };
+      return { ...result, medications: fresh.map((v) => v.id), payload };
+    } finally {
+      ticking = false;
+    }
+  }
+
+  return { publicKey: keys.publicKey, send, tick };
 }
 
 // ---------------------------------------------------------------------------
@@ -1545,7 +1976,7 @@ async function handleApi(req, res, url, ctx) {
   const p = url.pathname;
 
   if (p === '/api/health' && method === 'GET') {
-    return sendJson(res, 200, { ok: true, version: VERSION, time: nowIso(), https: ctx.https });
+    return sendJson(res, 200, { ok: true, version: VERSION, time: nowIso(), https: ctx.https, push: { enabled: true, subscriptions: repo.countPushSubscriptions() } });
   }
 
   if (p === '/api/state' && method === 'GET') {
@@ -1620,15 +2051,63 @@ async function handleApi(req, res, url, ctx) {
 
   if (p === '/api/settings') {
     if (method === 'GET') {
-      return sendJson(res, 200, { interval_minutes: repo.getInterval() });
+      return sendJson(res, 200, settingsView(repo));
     }
     if (method === 'PUT') {
       const body = await readJsonBody(req);
-      const minutes = validateInterval(body.interval_minutes);
-      repo.setInterval(minutes);
-      return sendJson(res, 200, { interval_minutes: minutes });
+      const keys = ['interval_minutes', 'reminder_quiet_from', 'reminder_quiet_to'];
+      if (!keys.some((k) => k in body)) throw new HttpError(400, `Body must contain at least one of: ${keys.join(', ')}`);
+      if ('interval_minutes' in body) repo.setInterval(validateInterval(body.interval_minutes));
+      if ('reminder_quiet_from' in body || 'reminder_quiet_to' in body) {
+        const cur = repo.getReminderQuiet();
+        const from = 'reminder_quiet_from' in body ? validateQuietTime(body.reminder_quiet_from, 'reminder_quiet_from') : (cur ? cur.from : null);
+        const to = 'reminder_quiet_to' in body ? validateQuietTime(body.reminder_quiet_to, 'reminder_quiet_to') : (cur ? cur.to : null);
+        repo.setReminderQuiet(from && to ? { from, to } : null);
+      }
+      return sendJson(res, 200, settingsView(repo));
     }
     throw new HttpError(405, 'Method not allowed');
+  }
+
+  // --- Erweiterung 7: Push-Anmeldungen ---
+  if (p === '/api/push/key' && method === 'GET') {
+    return sendJson(res, 200, { enabled: true, public_key: ctx.push.publicKey, subscriptions: repo.countPushSubscriptions() });
+  }
+  if (p === '/api/push/subscriptions') {
+    if (method === 'GET') {
+      return sendJson(res, 200, { subscriptions: repo.allPushSubscriptions().map(pushSubscriptionView) });
+    }
+    if (method === 'POST') {
+      const body = await readJsonBody(req);
+      const sub = validatePushSubscription(body);
+      const existing = repo.pushSubscriptionByEndpoint(sub.endpoint);
+      if (!existing && repo.countPushSubscriptions() >= PUSH_SUBSCRIPTIONS_MAX) {
+        throw new HttpError(409, `At most ${PUSH_SUBSCRIPTIONS_MAX} push subscriptions`);
+      }
+      const row = repo.upsertPushSubscription(sub);
+      return sendJson(res, existing ? 200 : 201, { subscription: pushSubscriptionView(row) });
+    }
+    if (method === 'DELETE') {
+      const body = await readJsonBody(req);
+      if (typeof body.endpoint !== 'string') throw new HttpError(400, 'endpoint is required');
+      if (!repo.removePushSubscription(body.endpoint)) throw new HttpError(404, 'Subscription not found');
+      return sendEmpty(res, 204);
+    }
+    throw new HttpError(405, 'Method not allowed');
+  }
+  if (p === '/api/push/test' && method === 'POST') {
+    const body = await readJsonBody(req);
+    let subs = repo.allPushSubscriptions();
+    if (typeof body.endpoint === 'string') subs = subs.filter((s) => s.endpoint === body.endpoint);
+    if (!subs.length) throw new HttpError(404, 'No push subscription');
+    const result = await ctx.push.send(subs, {
+      type: 'test',
+      title: 'Boobo',
+      body: 'Benachrichtigungen funktionieren. Schön, dass du da bist.',
+      tag: 'boobo-test',
+      url: '/',
+    });
+    return sendJson(res, 200, result);
   }
 
   if (p === '/api/diapers') {
@@ -1681,21 +2160,24 @@ async function handleApi(req, res, url, ctx) {
       const nowMs = Date.now();
       return sendJson(res, 200, {
         now: new Date(nowMs).toISOString(),
-        medications: medicationViews(repo, nowMs),
+        medications: medicationViews(repo, nowMs, timeZone),
       });
     }
     if (method === 'POST') {
       const body = await readJsonBody(req);
-      const med = repo.insertMedication({
+      const minGap =
+        body.min_gap_minutes === undefined || body.min_gap_minutes === null ? 0 : validateMinGap(body.min_gap_minutes);
+      const reminder = REMINDER_FIELDS.some((k) => k in body)
+        ? reminderFromBody(body, { reminder_mode: 'off', reminder_times: [], reminder_after_minutes: null, reminder_repeat_minutes: 0 }, minGap)
+        : null;
+      let med = repo.insertMedication({
         name: validateMedName(body.name),
         dose: validateDose(body.dose),
         max_per_day: validateMaxPerDay(body.max_per_day),
-        min_gap_minutes:
-          body.min_gap_minutes === undefined || body.min_gap_minutes === null
-            ? 0
-            : validateMinGap(body.min_gap_minutes),
+        min_gap_minutes: minGap,
       });
-      return sendJson(res, 201, { medication: medicationView(repo, med, Date.now()) });
+      if (reminder) med = repo.updateReminder(med.id, reminder, nowIso());
+      return sendJson(res, 201, { medication: medicationView(repo, med, Date.now(), timeZone) });
     }
     throw new HttpError(405, 'Method not allowed');
   }
@@ -1713,14 +2195,14 @@ async function handleApi(req, res, url, ctx) {
         const existing = repo.findDuplicateIntake(id, at, duplicateMinutes);
         if (existing) {
           if (onDuplicate === 'skip') {
-            const medication = medicationView(repo, repo.medicationById(id), Date.now());
+            const medication = medicationView(repo, repo.medicationById(id), Date.now(), timeZone);
             return sendJson(res, 200, { intake: null, skipped: true, existing, medication });
           }
           return sendJson(res, 409, { error: 'duplicate', existing });
         }
       }
       const intake = repo.insertIntake(id, at, note);
-      const medication = medicationView(repo, repo.medicationById(id), Date.now());
+      const medication = medicationView(repo, repo.medicationById(id), Date.now(), timeZone);
       return sendJson(res, 201, { intake, medication });
     }
     throw new HttpError(405, 'Method not allowed');
@@ -1732,13 +2214,13 @@ async function handleApi(req, res, url, ctx) {
     if (method === 'GET') {
       const med = repo.medicationById(id);
       if (!med) throw new HttpError(404, 'Medication not found');
-      return sendJson(res, 200, { medication: medicationView(repo, med, Date.now()) });
+      return sendJson(res, 200, { medication: medicationView(repo, med, Date.now(), timeZone) });
     }
     if (method === 'PATCH') {
       const body = await readJsonBody(req);
       const existing = repo.medicationById(id);
       if (!existing) throw new HttpError(404, 'Medication not found');
-      const fields = ['name', 'dose', 'max_per_day', 'min_gap_minutes', 'active', 'sort_order'];
+      const fields = ['name', 'dose', 'max_per_day', 'min_gap_minutes', 'active', 'sort_order', ...REMINDER_FIELDS];
       if (!fields.some((k) => k in body)) {
         throw new HttpError(400, `Body must contain at least one of: ${fields.join(', ')}`);
       }
@@ -1751,14 +2233,41 @@ async function handleApi(req, res, url, ctx) {
         active: 'active' in body ? validateActive(body.active) : existing.active,
         sort_order: 'sort_order' in body ? validateSortOrder(body.sort_order) : existing.sort_order,
       };
-      const med = repo.updateMedication(id, next);
-      return sendJson(res, 200, { medication: medicationView(repo, med, Date.now()) });
+      // Erinnerung vorab prüfen, damit bei einem Fehler nichts halb gespeichert ist
+      const current = reminderOf(existing);
+      const reminder = REMINDER_FIELDS.some((k) => k in body) ? reminderFromBody(body, current, next.min_gap_minutes) : null;
+      let med = repo.updateMedication(id, next);
+      // Nur bei echter Änderung neu ab jetzt gelten lassen (sonst würde ein Snooze oder Überspringen verloren gehen)
+      if (reminder && !sameReminder(reminder, current)) med = repo.updateReminder(id, reminder, nowIso());
+      return sendJson(res, 200, { medication: medicationView(repo, med, Date.now(), timeZone) });
     }
     if (method === 'DELETE') {
       if (!repo.removeMedication(id)) throw new HttpError(404, 'Medication not found');
       return sendEmpty(res, 204);
     }
     throw new HttpError(405, 'Method not allowed');
+  }
+
+  // Erweiterung 7: Erinnerung verschieben („In 15 Minuten“), überspringen, zurücksetzen
+  const medReminderMatch = /^\/api\/medications\/([^/]+)\/reminder$/.exec(p);
+  if (medReminderMatch) {
+    const id = parseId(medReminderMatch[1], 'Medication not found');
+    if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
+    const body = await readJsonBody(req);
+    let med = repo.medicationById(id);
+    if (!med) throw new HttpError(404, 'Medication not found');
+    if (body.action === 'snooze') {
+      const minutes = validateSnoozeMinutes(body.minutes);
+      med = repo.snoozeReminder(id, new Date(Date.now() + minutes * MINUTE_MS).toISOString());
+    } else if (body.action === 'skip') {
+      const view = medicationView(repo, med, Date.now(), timeZone);
+      if (view.reminder.slot_at) med = repo.skipReminder(id, view.reminder.slot_at);
+    } else if (body.action === 'resume') {
+      med = repo.resumeReminder(id);
+    } else {
+      throw new HttpError(400, 'action must be one of: snooze, skip, resume');
+    }
+    return sendJson(res, 200, { medication: medicationView(repo, med, Date.now(), timeZone) });
   }
 
   if (p === '/api/med-intakes') {
@@ -1796,7 +2305,7 @@ async function handleApi(req, res, url, ctx) {
         at: 'at' in body ? parseAt(body.at) : existing.at,
         note: 'note' in body ? validateNote(body.note) : existing.note,
       });
-      const medication = medicationView(repo, repo.medicationById(intake.medication_id), Date.now());
+      const medication = medicationView(repo, repo.medicationById(intake.medication_id), Date.now(), timeZone);
       return sendJson(res, 200, { intake, medication });
     }
     if (method === 'DELETE') {
@@ -2079,10 +2588,19 @@ export function createServer({
   tlsDir = process.env.TLS_DIR || path.join(dataDir, 'tls'),
   tlsHosts = parseTlsHosts(process.env.TLS_HOSTS),
   log = (line) => console.log(line),
+  pushSubject = process.env.PUSH_SUBJECT || 'mailto:boobo@example.com',
+  pushFetch = fetch,
+  pushTickMs = PUSH_TICK_MS,
 } = {}) {
   const timeZone = resolveTimeZone();
   const db = openDatabase(dataDir, intervalMinutes);
   const repo = createRepo(db);
+  // Erweiterung 7: Erinnerungen per Web Push, alle 30 s geprüft (pushTickMs = 0: nur von Hand, für Tests)
+  const push = createPushSender({ repo, timeZone, log, subject: pushSubject, fetchImpl: pushFetch });
+  const pushTimer = pushTickMs > 0
+    ? setInterval(() => push.tick().catch((err) => log(`Push: ${err && err.message ? err.message : err}`)), pushTickMs)
+    : null;
+  if (pushTimer && typeof pushTimer.unref === 'function') pushTimer.unref();
 
   // HTTPS vorbereiten (optional). Scheitert die Zertifikatserzeugung, läuft http trotzdem.
   let tls = null;
@@ -2105,7 +2623,7 @@ export function createServer({
   }
 
   const refs = createRefRegistry(repo, growthDir);
-  const ctx = { repo, timeZone, duplicateMinutes, https: httpsInfo, refs };
+  const ctx = { repo, timeZone, duplicateMinutes, https: httpsInfo, refs, push };
 
   const handler = async (req, res) => {
     const started = process.hrtime.bigint();
@@ -2161,6 +2679,7 @@ export function createServer({
   function close() {
     if (closed) return Promise.resolve();
     closed = true;
+    if (pushTimer) clearInterval(pushTimer);
     const closeOne = (srv) =>
       new Promise((resolve) => {
         if (!srv || !srv.listening) return resolve();
@@ -2176,7 +2695,7 @@ export function createServer({
     });
   }
 
-  return { server, httpsServer, https: httpsInfo, httpsPort, db, repo, timeZone, dataDir, duplicateMinutes, close };
+  return { server, httpsServer, https: httpsInfo, httpsPort, db, repo, timeZone, dataDir, duplicateMinutes, push, close };
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,11 @@ ohne Cloud, ohne Abhängigkeiten.
   Säulen pro Tag und je Tagesstunde, Raster Tag × Stunde fürs Muster, Seitenverteilung, Abstands-Klassen, Tabelle
 - Medikamente für Mama: Paracetamol, Ibuprofen & Co. mit Mindestabstand und Tageshöchstzahl, „Wieder ab 16:30“
   auf einen Blick, Erinnerung per Home Assistant
+- Erinnerungen für Mama, pro Medikament einstellbar: zu festen Uhrzeiten („8:00, 20:00“) oder „x Stunden nach der
+  letzten Einnahme“, auf Wunsch alle 10/15/30/60 Minuten nochmal, bis es genommen ist. Popup in der App auf beiden
+  Handys („Kurz an dich denken“ mit „Genommen“, „In 15 Minuten“, „Diesmal nicht“), Ton und Vibration, Nachtruhe.
+  Dazu echte Benachrichtigungen aufs Handy (Web Push, auch bei geschlossener App, ohne Cloud-Konto) und die
+  passenden Sensoren für Home Assistant
 - Nachtmodus: Erscheinungsbild System/Hell/Dunkel und automatisches Dimmen zwischen 22 und 7 Uhr
 - Verlauf nach Tagen gruppiert, mit Abständen zwischen den Mahlzeiten
 - Beide Handys synchron (automatische Aktualisierung alle 30 s)
@@ -124,8 +129,33 @@ betreibt, kann den eingebauten HTTPS-Port mit `HTTPS_PORT=0` abschalten.
 
 Boobo liefert unter `GET /api/state` den aktuellen Stand als JSON. Im Ordner [`homeassistant/`](homeassistant/)
 liegen fertige REST-Sensoren, Template-Entitäten, eine Automation „Bobo hat bald Hunger“ (Benachrichtigung an beide
-Handys nach 3 h), eine Erinnerung „Kurz an dich denken“ für Mamas Medikamente, Skripte zum Notieren
-(Stillen, Windeln, Medikamente) und eine Dashboard-Karte. Schritt-für-Schritt-Anleitung: [`homeassistant/README.md`](homeassistant/README.md).
+Handys nach 3 h), zwei Erinnerungen „Kurz an dich denken“ für Mamas Medikamente (wenn eines wieder geht, und die in
+der App eingestellten Erinnerungen), Skripte zum Notieren (Stillen, Windeln, Medikamente) und eine Dashboard-Karte. Schritt-für-Schritt-Anleitung: [`homeassistant/README.md`](homeassistant/README.md).
+
+## Erinnerungen und Benachrichtigungen
+
+Pro Medikament (Einstellungen → Für Mama → Medikament → „Erinnerung“):
+
+- **Zu Uhrzeiten**: „8:00, 20:00“. Eine Einnahme bis zu einer Stunde vor der Uhrzeit gilt schon als erledigt.
+- **Nach Einnahme**: „8 Stunden nach der letzten Einnahme“ (leer = der Mindestabstand). Erinnert wird frühestens, wenn
+  Mindestabstand und Tageshöchstzahl es zulassen. Ohne Einnahme seit 36 Stunden gilt das Mittel als abgesetzt.
+- **Nochmal erinnern**: nur einmal, oder alle 10/15/30/60 Minuten, bis „Genommen“ gedrückt ist.
+
+Wenn es so weit ist: Popup „Kurz an dich denken“ in der App auf beiden Handys (mit Ton und Vibration, abschaltbar),
+„Genommen“ notiert die Einnahme, „In 15 Minuten“ verschiebt, „Diesmal nicht“ überspringt diese eine Erinnerung.
+„Nachts Ruhe“ (Einstellungen → Erinnerungen) hält Meldungen z. B. zwischen 23:00 und 06:30 zurück; was ansteht,
+kommt danach.
+
+**Benachrichtigung bei geschlossener App:** Einstellungen → Erinnerungen → „Auf diesem Handy benachrichtigen“. Boobo
+nutzt dafür Web Push mit einem eigenen Schlüsselpaar (liegt in der Datenbank), ohne Konto und ohne Cloud-Dienst von
+Boobo; nur die verschlüsselte Nachricht läuft über den Push-Dienst des Handys (Google, Apple). Voraussetzungen:
+
+- Boobo über **https** geöffnet (siehe oben) und beim iPhone als App auf dem Home-Bildschirm (iOS 16.4 oder neuer).
+- Das NAS muss den Push-Dienst im Internet erreichen können (ausgehende HTTPS-Verbindungen).
+- „Testnachricht schicken“ zeigt, ob alles ankommt.
+
+Beide Handys können sich anmelden; die Nachricht hat die Knöpfe „Genommen“ und „In 15 Minuten“ (Android, Desktop).
+Wer stattdessen die Home-Assistant-Benachrichtigung nutzt, lässt den Schalter aus, sonst klingelt es doppelt.
 
 ## Konfiguration
 
@@ -140,7 +170,8 @@ Umgebungsvariablen (in `docker-compose.yml` unter `environment:` setzen):
 | `DATA_DIR` | `/data` (Image) / `./data` (lokal) | Ablageort der SQLite-Datei `boobo.db` |
 | `FEED_INTERVAL_MINUTES` | `180` | Stillintervall in Minuten beim **ersten Start**; danach gilt der Wert aus den App-Einstellungen |
 | `FEED_DUPLICATE_MINUTES` | `10` | Zeitfenster des Doppelschutzes in Minuten |
-| `TZ` | `Europe/Berlin` | Zeitzone für Logging und den Tageszähler („heute“) |
+| `TZ` | `Europe/Berlin` | Zeitzone für Logging, den Tageszähler („heute“) und die Uhrzeiten der Erinnerungen |
+| `PUSH_SUBJECT` | `mailto:boobo@example.com` | Absender-Kennung für Web Push (VAPID `sub`); der Push-Dienst kann darüber den Betreiber erreichen, muss aber nicht stimmen |
 
 Alle Zeiten in der API sind ISO-8601 in UTC; die Oberfläche zeigt lokale Zeit.
 
@@ -191,9 +222,13 @@ beschrieben. Kurzüberblick:
 | `GET`/`POST` | `/api/medications` | Medikamente mit Status lesen / anlegen |
 | `PATCH`/`DELETE` | `/api/medications/:id` | Medikament ändern (z. B. pausieren) / löschen |
 | `POST` | `/api/medications/:id/intakes` | Einnahme notieren |
+| `POST` | `/api/medications/:id/reminder` | Erinnerung verschieben (`snooze`), überspringen (`skip`), zurücksetzen (`resume`) |
+| `GET` | `/api/push/key` | Öffentlicher VAPID-Schlüssel für Web Push |
+| `GET`/`POST`/`DELETE` | `/api/push/subscriptions` | Handys für Benachrichtigungen an- und abmelden |
+| `POST` | `/api/push/test` | Testnachricht schicken |
 | `GET` | `/api/med-intakes` | Einnahmen lesen |
 | `PATCH`/`DELETE` | `/api/med-intakes/:id` | Einnahme ändern (Uhrzeit nachkorrigieren) / löschen |
-| `GET`/`PUT` | `/api/settings` | Intervall lesen / setzen |
+| `GET`/`PUT` | `/api/settings` | Intervall und Nachtruhe der Erinnerungen lesen / setzen |
 | `GET` | `/api/growth` | Wachstum: Profil, Messungen mit Perzentilen, Kurven, Zunahme, Zielgröße (`?ref=who\|de\|dk`, `range_days`) |
 | `GET`/`PUT` | `/api/growth/profile` | Geburtsdaten, Elterngrößen, gewählte Kurve |
 | `GET`/`POST` | `/api/growth/measurements` | Messungen lesen / eintragen |

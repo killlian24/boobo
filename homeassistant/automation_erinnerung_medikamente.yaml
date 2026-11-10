@@ -1,0 +1,55 @@
+# Boobo: Kurz an dich denken (Erinnerungen aus der App, Erweiterung 7)
+#
+# Einfügen über: Einstellungen → Automatisierungen → „Automatisierung erstellen“
+# → „Neue Automatisierung“ → Menü (⋮) oben rechts → „In YAML bearbeiten“ → Inhalt
+# dieser Datei einfügen → Speichern.
+#
+# Anders als automation_medikamente.yaml („geht wieder“) meldet diese Automation genau das, was in der App
+# unter Einstellungen → Für Mama → Medikament → „Erinnerung“ eingestellt ist: feste Uhrzeiten oder
+# „x Stunden nach der Einnahme“, Wiederholung alle n Minuten, „In 15 Minuten“, „Diesmal nicht“ und die
+# Nachtruhe aus den App-Einstellungen. Der Server rechnet das alles; HA sagt nur noch Bescheid.
+#
+# Jede Meldung des Servers hat einen eigenen „Ping“ (Attribut `ping` von sensor.boobo_mama_erinnerung_text).
+# Ändert er sich, kommt eine Benachrichtigung – auch bei einer Wiederholung mit gleichem Text.
+#
+# Hinweis: Wer die Web-Push-Benachrichtigungen der App benutzt (Einstellungen → Erinnerungen → „Auf diesem
+# Handy benachrichtigen“), bekommt dieselbe Meldung dann zweimal. Dann hier das Handy weglassen oder diese
+# Automation nur für ein Gerät ohne App-Push nutzen (z. B. den Lautsprecher in der Küche).
+#
+# Vorher anpassen:
+#   - notify.notify durch das Handy von Mama ersetzen, z. B. notify.mobile_app_<handy>.
+#   - NAS-IP durch die IP des NAS ersetzen.
+
+alias: "Boobo: Kurz an dich denken (Erinnerung)"
+description: "Meldet Mamas eingestellte Medikamenten-Erinnerungen aus der App, inklusive Wiederholungen."
+mode: queued
+max: 5
+
+triggers:
+  - trigger: state
+    entity_id: sensor.boobo_mama_erinnerung_text
+    attribute: ping
+    not_from:
+      - "None"
+      - "unknown"
+      - "unavailable"
+
+conditions:
+  # Nur wenn gerade wirklich etwas ansteht (ping wird None, sobald genommen oder übersprungen)
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.ping is not none and trigger.to_state.attributes.ping != 'None' }}"
+  - condition: state
+    entity_id: binary_sensor.boobo_mama_erinnerung
+    state: "on"
+
+actions:
+  - action: notify.notify   # durch notify.mobile_app_<handy> ersetzen
+    data:
+      title: "Kurz an dich denken"
+      message: "Zeit für {{ states('sensor.boobo_mama_erinnerung_text') }}."
+      data:
+        tag: boobo-mama-erinnerung  # gleiche tag → Benachrichtigung wird ersetzt statt gestapelt
+        channel: Boobo              # Android: eigener Benachrichtigungskanal
+        importance: high            # Android: mit Ton
+        url: "http://NAS-IP:8099"   # iOS: Tippen öffnet die App
+        clickAction: "http://NAS-IP:8099"  # Android: dito

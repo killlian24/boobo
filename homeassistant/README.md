@@ -15,6 +15,7 @@ Dateien in diesem Ordner:
 | `automation_wiederholung.yaml` | optional: alle 30 min sanft erinnern, solange Bobo noch wartet |
 | `lovelace_card.yaml` | Beispiel-Karte fürs Dashboard, inkl. Notieren-Buttons |
 | `automation_medikamente.yaml` | „Kurz an dich denken“: Mama Bescheid sagen, wenn ein Medikament wieder genommen werden darf |
+| `automation_erinnerung_medikamente.yaml` | „Kurz an dich denken (Erinnerung)“: die in der App eingestellten Erinnerungen (Uhrzeiten, Wiederholung, Nachtruhe) als Benachrichtigung |
 | `rest_commands.yaml` | `rest_command.boobo_stillen` / `boobo_loeschen` / `boobo_windel` / `boobo_medikament` |
 | `scripts.yaml` | Skripte Links/Rechts/Beide/Flasche, „Seite, die dran ist“, Rückgängig, Windel nass/voll, Medikament genommen |
 | `input_text.yaml` | Helfer, der die ID des zuletzt aus HA Notierten für „Rückgängig“ merkt |
@@ -279,6 +280,16 @@ Magenschutz; Verwaltung in den App-Einstellungen). Home Assistant bekommt dazu:
   der Sensor auf `on` wechselt, nicht zwischen 23:00 und 06:30 (die Zeiten stehen in der `condition: time` und sind
   leicht änderbar). Eine Wiederholung alle 60 min ist als auskommentierter Trigger vorbereitet. `notify.notify` durch
   das Handy von Mama ersetzen.
+
+**Erinnerungen aus der App (Erweiterung 7):** Stellt man in der App pro Medikament eine Erinnerung ein (feste Uhrzeiten
+oder „x Stunden nach der Einnahme“, mit Wiederholung), liefert `/api/state` zusätzlich `reminders`, `reminders_text`
+und `reminder_ping`. Daraus entstehen:
+
+- `binary_sensor.boobo_mama_erinnerung` („Boobo Mama Erinnerung“): `on`, solange eine Erinnerung ansteht.
+- `sensor.boobo_mama_erinnerung_text`: z. B. „Paracetamol 1 g“, Attribut `ping` wechselt bei jeder Wiederholung.
+- `automation_erinnerung_medikamente.yaml`: schickt bei jedem neuen `ping` eine Benachrichtigung. Snooze, Überspringen
+  und Nachtruhe passieren in der App und gelten damit auch hier. Wer die Push-Benachrichtigung der App selbst nutzt,
+  braucht diese Automation nicht (sonst kommt alles doppelt).
 
 **Einnahme aus HA notieren:** `script.boobo_medikament_genommen` mit dem Feld `medication_id`:
 

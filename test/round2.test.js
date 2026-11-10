@@ -309,7 +309,7 @@ describe('Medikamente', () => {
     for (const m of meds) {
       assert.deepEqual(Object.keys(m).sort(), [
         'active', 'dose', 'due', 'id', 'last_at', 'max_per_day', 'min_gap_minutes', 'minutes_until_possible',
-        'name', 'next_possible_at', 'possible_now', 'remaining_24h', 'sort_order', 'taken_24h',
+        'name', 'next_possible_at', 'possible_now', 'remaining_24h', 'reminder', 'sort_order', 'taken_24h',
       ].sort());
       assert.equal(m.active, true);
       assert.equal(m.last_at, null);
@@ -366,7 +366,7 @@ describe('Medikamente', () => {
     let state = (await api('GET', '/api/state')).json;
     assert.deepEqual(state.medications_due, ['Paracetamol 1 g']);
     const sp = state.medications.find((x) => x.id === para.id);
-    assert.deepEqual(Object.keys(sp).sort(), ['dose', 'due', 'id', 'name', 'next_possible_at', 'possible_now', 'remaining_24h', 'taken_24h'].sort());
+    assert.deepEqual(Object.keys(sp).sort(), ['dose', 'due', 'id', 'name', 'next_possible_at', 'possible_now', 'remaining_24h', 'reminder', 'taken_24h'].sort());
     assert.equal(sp.due, true);
 
     const second = iso(t0 - 100 * MIN);
@@ -707,7 +707,7 @@ describe('Migration from a round-1 database (feeds + settings only)', () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         .all()
         .map((r) => r.name);
-      assert.deepEqual(tables, ['diapers', 'feeds', 'growth_refs', 'measurements', 'med_intakes', 'medications', 'settings']);
+      assert.deepEqual(tables, ['diapers', 'feeds', 'growth_refs', 'measurements', 'med_intakes', 'medications', 'push_subscriptions', 'settings']);
       assert.equal(ctx.app.db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
       assert.equal(ctx.app.db.prepare("SELECT value FROM settings WHERE key = 'meds_seeded'").get().value, '1');
     } finally {

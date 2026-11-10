@@ -108,3 +108,18 @@ keine Vorwürfe, keine Alarmstimmung. Warm, kurz, ein kleines Augenzwinkern ist 
 | Diagramm leer | „Geschlecht fehlt“ · „KiGGS-Kopfumfang erst ab 4 Monaten“ · „Keine Werte für Kopfumfang in diesem Zeitraum“ |
 | Zunahme | „3.240 g · −6,9 %“ / „Tiefster Wert · Tag 3“ · „Tag 10“ / „Geburtsgewicht wieder erreicht“ · „+650 g · P20“ / „0 bis 4 Wochen · WHO-Median 879 g“ · Befund „Mehr als 10 % unter Geburtsgewicht“ / „Mit Hebamme oder Sundhedsplejerske besprechen“ |
 | Zielgröße | „170 cm“ / „Tanner · 161,5 bis 178,5 cm“ · „170,3 cm · P55“ / „Hermanussen-Cole · 160,2 bis 180,4 cm“ · fehlend „Größen der Eltern fehlen“ / „Unter Geburtsdaten eintragen“ |
+
+## Erweiterung 7: Erinnerungen und Benachrichtigungen
+
+| Stelle | Text |
+|---|---|
+| Medikament-Dialog | Abschnitt „Erinnerung“: Keine / Zu Uhrzeiten / Nach Einnahme · Felder „Uhrzeiten (mit Komma)“ (z. B. 8:00, 20:00), „Stunden nach der letzten Einnahme“ (leer = „wie der Abstand“), „Nochmal erinnern, bis es genommen ist“: Nur einmal / Alle 10, 15, 30 Minuten / Jede Stunde · Hinweis „Erinnert jeden Tag um 8:00, 20:00. Danach alle 30 min nochmal, bis es genommen ist.“ bzw. „Nur einmal, dazu „In 15 Minuten“ im Popup.“ |
+| Medikamente verwalten | Zeile zusätzlich „Erinnerung 8:00, 20:00, alle 30 min nochmal“ / „Erinnerung 8 h nach Einnahme“ |
+| Status im Block „Für Mama“ | „Zeit dafür · seit 08:00 · zuletzt gestern 20:05“ (Zeile hervorgehoben) · „Erinnert wieder um 08:20“ · „Erinnert ab 06:30“ (Nachtruhe) · sonst wie bisher plus „· Erinnerung 20:00“ |
+| Popup | Titel „Kurz an dich denken“ · Unterzeile „Zeit für Paracetamol 1 g.“ / „Zeit für deine Medikamente.“ · Zeile „seit 08:00 · zuletzt gestern 20:05“ · Buttons „Genommen“, „Diesmal nicht“ · unten „In 15 Minuten“ / „Schließen“ |
+| Nach „Diesmal nicht“ | „Gut, dann nicht. Beim nächsten Mal wieder.“ |
+| Nach „In 15 Minuten“ | „Alles klar, in 15 Minuten nochmal.“ |
+| Push-Nachricht | Titel „Kurz an dich denken“ · „Zeit für Paracetamol 1 g.“ · Wiederholung: „Paracetamol 1 g wartet noch · seit 08:00.“ (mehrere: „… warten noch“) · Knöpfe „Genommen“ / „In 15 Minuten“ |
+| Testnachricht | Titel „Boobo“ · „Benachrichtigungen funktionieren. Schön, dass du da bist.“ · Toast „Abgeschickt. Gleich sollte es klingeln.“ / „Der Push-Dienst hat nicht angenommen. Hat das NAS Internet?“ |
+| Einstellungen „Erinnerungen“ | Schalter „Auf diesem Handy benachrichtigen“ · Hinweise „Erinnerungen kommen dann auch an, wenn Boobo zu ist.“ / „Dieses Handy bekommt Mamas Erinnerungen, auch wenn Boobo zu ist.“ / „Auf dem iPhone geht das erst, wenn Boobo auf dem Home-Bildschirm liegt (siehe unten).“ / „Benachrichtigungen sind für Boobo im Handy gesperrt. Dort erlauben, dann hier einschalten.“ · Button „Testnachricht schicken“ · Schalter „Ton und Vibration in der App“ · Schalter „Nachts Ruhe“ mit „Ruhe ab“ / „bis“ · „Keine Meldung in der Ruhezeit; was ansteht, kommt danach.“ |
+| Toasts | „Dieses Handy ist dabei.“ / „Keine Benachrichtigungen mehr auf diesem Handy.“ · Speichern: „Gespeichert.“ + „Abstand 3 h · Ruhe 23:00 bis 06:30“ |

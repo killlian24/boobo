@@ -45,6 +45,9 @@ rest:
           - summary_24h
           - medications
           - medications_due
+          - reminders
+          - reminders_text
+          - reminder_ping
 
       - name: "Boobo Minuten seit Stillen"
         unique_id: boobo_minuten_seit_stillen
@@ -151,6 +154,14 @@ template:
         availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
         state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | length > 0 }}"
 
+      # Erweiterung 7: Eine in der App eingestellte Erinnerung steht an („Zeit für …“). Uhrzeiten, Wiederholung,
+      # Snooze, Überspringen und Nachtruhe rechnet der Server; hier kommt nur noch an, ob und wofür.
+      - name: "Boobo Mama Erinnerung"
+        unique_id: boobo_erinnerung
+        icon: mdi:bell-ring-outline
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ (state_attr('sensor.boobo_status', 'reminders') or []) | length > 0 }}"
+
     sensor:
       - name: "Boobo Vorschlag Seite"
         unique_id: boobo_vorschlag_seite
@@ -180,6 +191,17 @@ template:
         icon: mdi:pill
         availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
         state: "{{ (state_attr('sensor.boobo_status', 'medications_due') or []) | join(', ') }}"
+
+      # Erweiterung 7: Wofür gerade erinnert wird, z. B. „Paracetamol 1 g“. Attribut `ping` wechselt bei jeder
+      # Wiederholung (auch bei gleichem Text), darauf lauscht automation_erinnerung_medikamente.yaml.
+      - name: "Boobo Mama Erinnerung Text"
+        unique_id: boobo_erinnerung_text
+        icon: mdi:bell-ring-outline
+        availability: "{{ states('sensor.boobo_status') not in ['unknown', 'unavailable'] }}"
+        state: "{{ state_attr('sensor.boobo_status', 'reminders_text') or '' }}"
+        attributes:
+          ping: "{{ state_attr('sensor.boobo_status', 'reminder_ping') }}"
+          medications: "{{ state_attr('sensor.boobo_status', 'reminders') or [] }}"
 
       - name: "Boobo Stillen 24h"
         unique_id: boobo_stillen_24h

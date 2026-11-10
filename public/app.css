@@ -1453,3 +1453,29 @@ button, .seg, .chip, .tab, .tabbar, .segmented, .switch-row, .pause-toggle, .she
 .sheet-head h2 { margin: 0; }
 .sheet-head { margin-bottom: 12px; }
 .sheet-head + .stats-info { margin: -4px 0 14px; }
+
+/* Erweiterung 7: Erinnerungen */
+.reminder-list { margin-top: -4px; margin-bottom: 8px; }
+.reminder-list .med-row { align-items: flex-start; }
+.reminder-list .med-row .med-take { margin-top: 2px; }
+.reminder-list .med-row .text-link { display: inline-block; margin-top: 6px; padding: 6px 0; min-height: 32px; }
+.med-take.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.med-row.due .med-take.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+#reminder-settings .switch-row { margin-bottom: 10px; }
+#reminder-settings .hint { margin: -4px 0 10px; }
+#reminder-settings .link-btn { margin-bottom: 12px; }
+.quiet-times { margin-top: 4px; }
+.quiet-times .field { margin-bottom: 8px; }
+.field input[type="time"] {
+  width: 100%;
+  height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  -webkit-appearance: none;
+  appearance: none;
+}

@@ -94,3 +94,13 @@ Quelle eckig (maskable), das System rundet. `public/icon.svg`, PNG 192/512 darau
 - Zunahme und Zielgröße als Zeilen: Zahl fett, darunter Kontext klein. Auffällige Befunde (mehr als 10 % Verlust,
   Geburtsgewicht nach 14 Tagen nicht erreicht) mit `--tint-r` hinterlegt.
 - Dialoge ohne Hinweissätze.
+
+## Ergänzung 7: Erinnerungen
+
+- Popup „Kurz an dich denken“ ist ein normales Sheet; jede Zeile wie im Block „Für Mama“ mit `--tint-n` hinterlegt,
+  Button „Genommen“ dort gefüllt (`--text` auf `--bg`), darunter der Textlink „Diesmal nicht“. Es erscheint, sobald
+  der Server einen neuen Ping meldet, mit Vibration (200/100/200 ms) und zwei weichen Tönen (C5, E5, je 0,5 s), beides
+  nur, wenn „Ton und Vibration in der App“ an ist (localStorage `boobo.remindSound`).
+- Eine Medikament-Zeile mit anstehender Erinnerung ist wie „Geht jetzt“ hervorgehoben (`.due`), Text „Zeit dafür“.
+- Erinnerung im Medikament-Dialog als dreiteiliges Segment (neutral), Felder blenden je nach Wahl ein; `<select>` und
+  `<input type="time">` nutzen die Feldmaße (52 hoch, Radius 16).

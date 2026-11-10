@@ -421,3 +421,109 @@ Regeln:
   Felds schreibt die Einzelheiten in die Zeile darunter; `<title>` liefert dasselbe als Tooltip, Tastatur über Tab/Enter.
 - Während eines Neuladens bleibt die alte Darstellung halbtransparent stehen (kein Flackern). Leer: „Noch nichts zu
   sehen. Nach ein paar Tagen zeigt sich hier, wann Bobo kommt.“
+
+# Erweiterung 7 (2026-11-10): Erinnerungen und Benachrichtigungen
+
+Mama soll ihre Medikamente nicht vergessen: pro Medikament eine einstellbare Erinnerung, ein Popup in der App auf
+beiden Handys, echte Benachrichtigungen per Web Push (auch bei geschlossener App) und die Felder für Home Assistant.
+Alles wird **auf dem Server** gerechnet (`lib/reminders.js`), damit beide Handys, der Push und HA dasselbe sehen.
+
+## 1. Datenmodell
+
+Neue Spalten an `medications` (per `ALTER TABLE` nachgerüstet, bestehende Datenbanken bleiben heil):
+
+| Spalte | Typ | Bedeutung |
+|---|---|---|
+| reminder_mode | TEXT NOT NULL DEFAULT 'off' | `off` \| `times` (feste Uhrzeiten) \| `after_last` (x Minuten nach der letzten Einnahme) |
+| reminder_times | TEXT NULL | JSON-Liste `["08:00","20:00"]` (Ortszeit `TZ`), 1..12 Einträge, sortiert, ohne Doppelte |
+| reminder_after_minutes | INTEGER NULL | bei `after_last`: Minuten nach der letzten Einnahme, 1..10080; null = `min_gap_minutes` |
+| reminder_repeat_minutes | INTEGER NOT NULL DEFAULT 0 | 0 = einmal erinnern, sonst alle n Minuten (≤ 720) erneut, bis genommen oder übersprungen |
+| reminder_since | TEXT NULL | ISO: ab wann die Einstellung gilt. Uhrzeiten davor werden nicht nachgeholt |
+| reminder_snoozed_until | TEXT NULL | „In 15 Minuten“: bis dahin Ruhe, danach neuer Ping |
+| reminder_skipped_slot | TEXT NULL | ISO des übersprungenen Zeitpunkts („Diesmal nicht“) |
+| reminder_sent_ping | TEXT NULL | letzter per Push verschickter Ping (gegen Doppelmeldungen) |
+
+Neue Tabelle `push_subscriptions`: `id`, `endpoint` (UNIQUE), `p256dh`, `auth`, `label` (z. B. „iPhone“), `created_at`,
+`updated_at`, `last_ok_at`, `failures`. Höchstens 20 Anmeldungen.
+
+Neue `settings`-Schlüssel: `reminder_quiet` (JSON `{"from":"23:00","to":"06:30"}` oder `null`),
+`vapid_keys` (JSON `{publicKey, privateKey}`, einmalig beim ersten Start erzeugt).
+
+## 2. Statusrechnung (`reminder` an jedem Medikament)
+
+`reminder = { mode, times, after_minutes, repeat_minutes, status, slot_at, ping_at, snoozed_until, next_at, quiet_until }`
+
+- `slot_at`: der Zeitpunkt, um den es gerade geht. `times`: die jüngste vergangene Uhrzeit (gestern/heute) seit
+  `reminder_since`, sofern keine Einnahme ab `slot_at − 60 min` vorliegt (07:30 genommen → 08:00 erledigt).
+  `after_last`: `last_at + after_minutes`, wenn vergangen, nach `reminder_since` und weniger als 36 h her (danach gilt
+  das Mittel als abgesetzt). Sonst null.
+- `status`: `off` (keine Erinnerung oder pausiert) · `idle` (nichts steht an, `next_at` nennt die nächste) ·
+  `skipped` (dieser `slot_at` wurde übersprungen) · `snoozed` (bis `snoozed_until`) · `quiet` (Nachtruhe, bis `quiet_until`) ·
+  `pending` (jetzt erinnern). Vor `pending` wird zusätzlich `next_possible_at` beachtet: erst erinnern, wenn das Mittel auch
+  genommen werden darf (Mindestabstand, Höchstzahl); solange `idle` mit `next_at = next_possible_at`.
+- `ping_at` (nur bei `pending`): Zeitpunkt der aktuellen Meldung. Basis ist `slot_at` (bzw. das Ende eines Snoozes oder
+  der Moment, ab dem das Mittel wieder möglich war); mit `repeat_minutes` springt der Ping alle n Minuten weiter.
+  **Der Client zeigt jeden Ping genau einmal**, der Push-Versand verschickt jeden Ping genau einmal.
+- Nachtruhe (`reminder_quiet`, Fenster darf über Mitternacht gehen, `from == to` = aus): in der Ruhezeit `quiet`, danach
+  kommt der nächste Ping von selbst.
+- Ändert sich die Einstellung (`reminder_*` per PATCH anders als vorher), werden `reminder_since` auf jetzt gesetzt und
+  Snooze/Skip/Sent gelöscht. Unveränderte Werte lassen alles stehen.
+
+## 3. Endpunkte
+
+- `POST /api/medications` und `PATCH /api/medications/:id` nehmen zusätzlich `reminder_mode`, `reminder_times`,
+  `reminder_after_minutes`, `reminder_repeat_minutes`. `times` verlangt mindestens eine Uhrzeit (`"H:MM"` oder `"HH:MM"`),
+  `after_last` verlangt `reminder_after_minutes` oder einen Mindestabstand > 0. 400 sonst.
+- `POST /api/medications/:id/reminder` Body `{ "action": "snooze", "minutes": 15 }` (1..720, Default 15) ·
+  `{ "action": "skip" }` (überspringt den aktuellen `slot_at`; ohne `slot_at` passiert nichts) · `{ "action": "resume" }`
+  (löscht Snooze und Skip) → `200 { "medication": {...mit Status} }`.
+- `GET /api/settings` → `{ interval_minutes, reminder_quiet_from, reminder_quiet_to }` (`"HH:MM"` oder null).
+  `PUT /api/settings` nimmt eine Teilmenge davon (mindestens ein Feld); beide Quiet-Felder null oder leer = keine Ruhezeit.
+- `GET /api/push/key` → `{ enabled: true, public_key: "<base64url, 65 Bytes>", subscriptions: n }`
+- `GET /api/push/subscriptions` → `{ subscriptions: [ { id, endpoint, label, created_at, last_ok_at, failures } ] }`
+- `POST /api/push/subscriptions` Body = `PushSubscription.toJSON()` plus `label?` → `201` (neu) / `200` (gleicher `endpoint`,
+  Schlüssel werden aktualisiert, `label` bleibt, wenn keines mitkommt). `endpoint` muss `https:` sein. 409 ab 20 Anmeldungen.
+- `DELETE /api/push/subscriptions` Body `{ "endpoint" }` → `204` / `404`
+- `POST /api/push/test` Body `{ "endpoint"? }` → `200 { sent, failed }`, 404 ohne passende Anmeldung
+- `GET /api/health` zusätzlich `push: { enabled: true, subscriptions: n }`
+- `GET /api/state` zusätzlich, nur aktive Medikamente:
+  ```json
+  "medications": [ { ..., "reminder": { "status": "pending", "slot_at": "...", "ping_at": "...", "next_at": null } } ],
+  "reminders": [ { "id": 1, "name": "Paracetamol", "dose": "1 g", "slot_at": "...", "ping_at": "..." } ],
+  "reminders_text": "Paracetamol 1 g",
+  "reminder_ping": "<jüngster ping_at oder null>"
+  ```
+
+## 4. Web Push (ohne npm-Paket)
+
+`lib/webpush.js`: VAPID nach RFC 8292 (ES256-JWT, `sub` aus `PUSH_SUBJECT`, Default `mailto:boobo@example.com`) und
+Verschlüsselung nach RFC 8291/8188 (`aes128gcm`, ein Record, Testvektor aus RFC 8291 Anhang A in `test/reminders.test.js`).
+Der Server prüft alle 30 s (`createServer({ pushTickMs })`, 0 = nur von Hand über `app.push.tick()`), ob ein `pending`-Ping
+noch nicht verschickt wurde (`reminder_sent_ping`), merkt ihn **vor** dem Versand und schickt an alle Anmeldungen:
+
+```json
+{ "type": "reminder", "title": "Kurz an dich denken", "body": "Zeit für Paracetamol 1 g.", "tag": "boobo-mama",
+  "url": "/", "ping": "...", "medications": [ { "id": 1, "name": "Paracetamol", "dose": "1 g", "slot_at": "...", "ping_at": "..." } ] }
+```
+
+Bei einer Wiederholung lautet `body` „Paracetamol 1 g wartet noch · seit 08:00.“. Antwortet der Push-Dienst 404/410, wird die
+Anmeldung gelöscht. Der Service Worker (`public/sw.js`) zeigt die Nachricht mit `requireInteraction`, bei genau einem
+Medikament mit den Knöpfen „Genommen“ (`POST …/intakes` mit `on_duplicate: "skip"`) und „In 15 Minuten“ (`POST …/reminder`),
+und behandelt `pushsubscriptionchange`.
+
+## 5. Frontend
+
+- Block „Für Mama“: Zeile mit `reminder.status === "pending"` ist hervorgehoben, Text „Zeit dafür · seit 08:00“;
+  `snoozed` → „Erinnert wieder um 08:20“; `quiet` → „Erinnert ab 06:30“; sonst wie bisher, ergänzt um „· Erinnerung 20:00“.
+- Popup `#dlg-reminder` („Kurz an dich denken“): `checkReminders()` läuft nach jedem Rendern der Medikamente (Refresh alle
+  30 s, Minutentakt, Fokus). Pro Medikament wird `ping_at` gemerkt; ein neuer Ping öffnet das Sheet (oder aktualisiert es)
+  und löst Vibration und zwei Töne aus (abschaltbar, localStorage `boobo.remindSound`; Ton erst nach der ersten Berührung,
+  iOS-Regel). „Genommen“ = normale Einnahme, „Diesmal nicht“ = `skip`, „In 15 Minuten“ = `snooze` für alle gezeigten.
+  Das Sheet schließt von selbst, sobald nichts mehr ansteht.
+- Medikament-Dialog: Segment Keine / Zu Uhrzeiten / Nach Einnahme, Uhrzeiten als Text („8:00, 20:00“, auch „8“, „20.30“),
+  Stunden nach der Einnahme (leer = Abstand), Wiederholung als Auswahl. Unveränderte Stunden behalten die Minuten (wie beim
+  Abstand).
+- Einstellungen „Erinnerungen“: Push-Schalter (Berechtigung, `pushManager.subscribe` mit dem Server-Schlüssel, POST der
+  Anmeldung mit `label` = Gerät; beim App-Start wird eine bestehende Anmeldung erneut gemeldet), „Testnachricht schicken“,
+  „Ton und Vibration in der App“, „Nachts Ruhe“ mit zwei `time`-Feldern (werden mit „Speichern“ zusammen mit dem Abstand
+  per `PUT /api/settings` gesichert).

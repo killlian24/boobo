@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.2.0';
+  var APP_VERSION = '1.3.0';
   var REFRESH_MS = 30000;
   var TICK_MS = 60000;
   var TOAST_MS = 10000;
@@ -13,6 +13,8 @@
   var HISTORY_LIMIT_MAX = 500;  // Obergrenze des Servers pro Anfrage
   var LS_THEME = 'boobo.theme';
   var LS_NIGHT = 'boobo.night';
+  var LS_REMIND_SOUND = 'boobo.remindSound';
+  var REMINDER_SNOOZE_MIN = 15;
 
   var SIDE_NAMES = { left: 'Links', right: 'Rechts', both: 'Beide', bottle: 'Flasche' };
   var SIDE_LETTERS = { left: 'L', right: 'R', both: 'B', bottle: 'F' };
@@ -683,19 +685,41 @@
     return !!next && next <= now;
   }
 
+  function reminderOf(m) { return m && m.reminder && typeof m.reminder === 'object' ? m.reminder : null; }
+  function reminderPending(m) { var r = reminderOf(m); return !!r && r.status === 'pending' && !!r.ping_at; }
+
   function medStatusText(m, now) {
     var last = toDate(m.last_at);
     var max = isNum(m.max_per_day) ? m.max_per_day : null;
     var taken = isNum(m.taken_24h) ? m.taken_24h : 0;
     var count = max != null ? ' · ' + taken + ' von ' + max : '';
-    if (!last) return 'Noch nichts genommen';
-    if (medPossibleNow(m, now)) {
-      return (m.due ? 'Geht jetzt' : 'Geht wieder') + ' · zuletzt ' + dayPrefix(last, now) + fmtTime.format(last);
+    var lastText = last ? 'zuletzt ' + dayPrefix(last, now) + fmtTime.format(last) : '';
+    var r = reminderOf(m);
+    if (r && r.status === 'pending') {
+      var slot = toDate(r.slot_at);
+      return 'Zeit dafür' + (slot ? ' · seit ' + dayPrefix(slot, now) + fmtTime.format(slot) : '') + (lastText ? ' · ' + lastText : '');
     }
-    if (m.remaining_24h === 0) return 'Für heute komplett' + count;
-    var next = toDate(m.next_possible_at);
-    if (!next) return 'Zuletzt ' + dayPrefix(last, now) + fmtTime.format(last);
-    return 'Wieder ab ' + dayPrefix(next, now) + fmtTime.format(next) + count;
+    if (r && r.status === 'snoozed') {
+      var until = toDate(r.snoozed_until);
+      return 'Erinnert wieder' + (until ? ' um ' + dayPrefix(until, now) + fmtTime.format(until) : ' später') + (lastText ? ' · ' + lastText : '');
+    }
+    if (r && r.status === 'quiet') {
+      var qe = toDate(r.quiet_until);
+      return 'Erinnert ' + (qe ? 'ab ' + dayPrefix(qe, now) + fmtTime.format(qe) : 'nach der Ruhezeit') + (lastText ? ' · ' + lastText : '');
+    }
+    var base;
+    if (!last) base = 'Noch nichts genommen';
+    else if (medPossibleNow(m, now)) base = (m.due ? 'Geht jetzt' : 'Geht wieder') + ' · ' + lastText;
+    else if (m.remaining_24h === 0) base = 'Für heute komplett' + count;
+    else {
+      var next = toDate(m.next_possible_at);
+      base = !next ? 'Zuletzt ' + dayPrefix(last, now) + fmtTime.format(last) : 'Wieder ab ' + dayPrefix(next, now) + fmtTime.format(next) + count;
+    }
+    if (r && r.mode !== 'off') {
+      var n = toDate(r.next_at);
+      if (n && n > now) base += ' · Erinnerung ' + dayPrefix(n, now) + fmtTime.format(n);
+    }
+    return base;
   }
 
   function renderMeds() {
@@ -706,7 +730,7 @@
     var now = new Date();
     list.textContent = '';
     meds.forEach(function (m) {
-      var due = !!m.due && medPossibleNow(m, now);
+      var due = (!!m.due && medPossibleNow(m, now)) || reminderPending(m);
       var title = el('div', { class: 'med-name' }, [
         m.name || 'Medikament',
         m.dose ? el('span', { class: 'med-dose', text: ' ' + m.dose }) : null
@@ -724,6 +748,239 @@
       ]));
     });
     box.hidden = false;
+    checkReminders();
+  }
+
+  // ---------- Erinnerung: Popup „Kurz an dich denken“ ----------
+  // Der Server sagt pro Medikament, ob gerade erinnert wird (reminder.status "pending") und zu welchem Ping
+  // (reminder.ping_at; ändert sich bei jeder Wiederholung). Jeder Ping wird einmal gezeigt – auf beiden Handys gleich.
+
+  var shownPings = {};
+  var audioCtx = null;
+
+  function remindSoundEnabled() { return lsGet(LS_REMIND_SOUND) !== '0'; }
+
+  function pendingReminders() {
+    return (Array.isArray(state.meds) ? state.meds : []).filter(function (m) { return isActiveMed(m) && reminderPending(m); });
+  }
+
+  function checkReminders() {
+    var dlg = $('#dlg-reminder');
+    if (!dlg) return;
+    var pend = pendingReminders();
+    var fresh = pend.filter(function (m) { return shownPings[m.id] !== m.reminder.ping_at; });
+    if (dlg.open) {
+      if (!pend.length) { closeDialog(dlg); return; }
+      renderReminderList(pend);
+      if (fresh.length) { markShown(fresh); nudge(); }
+      return;
+    }
+    if (!fresh.length) return;
+    renderReminderList(pend);
+    markShown(pend);
+    openDialog(dlg);
+    nudge();
+  }
+
+  function markShown(list) {
+    list.forEach(function (m) { shownPings[m.id] = m.reminder.ping_at; });
+  }
+
+  function renderReminderList(pend) {
+    var list = $('#reminder-list');
+    var now = new Date();
+    list.textContent = '';
+    $('#reminder-sub').textContent = pend.length > 1 ? 'Zeit für deine Medikamente.' : 'Zeit für ' + intakeLabel(pend[0]) + '.';
+    pend.forEach(function (m) {
+      var slot = toDate(m.reminder.slot_at);
+      var last = toDate(m.last_at);
+      var parts = [];
+      if (slot) parts.push('seit ' + dayPrefix(slot, now) + fmtTime.format(slot));
+      if (last) parts.push('zuletzt ' + dayPrefix(last, now) + fmtTime.format(last));
+      var take = el('button', {
+        class: 'med-take primary', type: 'button', text: 'Genommen',
+        'aria-label': (m.name || 'Medikament') + ' genommen'
+      });
+      take.disabled = !!medBusy[m.id];
+      take.addEventListener('click', function () { takeMed(m); });
+      var skip = el('button', { class: 'text-link', type: 'button', text: 'Diesmal nicht' });
+      skip.addEventListener('click', function () { skipReminder(m); });
+      list.appendChild(el('li', { class: 'med-row due' }, [
+        el('div', { class: 'med-info' }, [
+          el('div', { class: 'med-name' }, [m.name || 'Medikament', m.dose ? el('span', { class: 'med-dose', text: ' ' + m.dose }) : null]),
+          el('div', { class: 'med-status', text: parts.join(' · ') }),
+          skip
+        ]),
+        take
+      ]));
+    });
+  }
+
+  function skipReminder(m) {
+    api('POST', '/api/medications/' + m.id + '/reminder', { action: 'skip' }).then(function () {
+      showToast('Gut, dann nicht. Beim nächsten Mal wieder.', { duration: 3000 });
+      return refreshMeds();
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  function snoozeReminders() {
+    var pend = pendingReminders();
+    if (!pend.length) { closeDialog($('#dlg-reminder')); return; }
+    Promise.all(pend.map(function (m) {
+      return api('POST', '/api/medications/' + m.id + '/reminder', { action: 'snooze', minutes: REMINDER_SNOOZE_MIN });
+    })).then(function () {
+      showToast('Alles klar, in ' + REMINDER_SNOOZE_MIN + ' Minuten nochmal.', { duration: 3000 });
+      return refreshMeds();
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 6000 });
+    });
+  }
+
+  // Zwei weiche Töne (C5, E5) plus Vibration. iOS erlaubt Ton erst nach einer Berührung: primeAudio() in init().
+  function primeAudio() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(function () { /* egal */ });
+    } catch (e) { audioCtx = null; }
+  }
+  function nudge() {
+    vibrate([200, 100, 200]);
+    if (!remindSoundEnabled() || !audioCtx) return;
+    try {
+      if (audioCtx.state === 'suspended') return;
+      var t = audioCtx.currentTime;
+      [523.25, 659.25].forEach(function (freq, i) {
+        var o = audioCtx.createOscillator();
+        var g = audioCtx.createGain();
+        var t0 = t + i * 0.18;
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+        o.connect(g);
+        g.connect(audioCtx.destination);
+        o.start(t0);
+        o.stop(t0 + 0.55);
+      });
+    } catch (e) { /* kein Ton, kein Drama */ }
+  }
+
+  // ---------- Push-Benachrichtigungen (Web Push über den Service Worker) ----------
+
+  function pushSupported() {
+    return !!(window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  }
+  function isIOS() {
+    return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  function deviceLabel() {
+    var ua = navigator.userAgent;
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/Android/.test(ua)) return 'Android';
+    if (/Macintosh/.test(ua)) return 'Mac';
+    if (/Windows/.test(ua)) return 'Windows';
+    return 'Browser';
+  }
+  function urlB64ToUint8Array(b64) {
+    var padding = '='.repeat((4 - (b64.length % 4)) % 4);
+    var raw = atob((b64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function pushSubscription() {
+    if (!pushSupported()) return Promise.resolve(null);
+    return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).catch(function () { return null; });
+  }
+  function registerPush(sub) {
+    var body = sub.toJSON();
+    body.label = deviceLabel();
+    return api('POST', '/api/push/subscriptions', body);
+  }
+  function enablePush() {
+    if (!pushSupported()) return Promise.reject(new Error('Dieser Browser kann keine Benachrichtigungen.'));
+    // Schlüssel zuerst holen, damit Berechtigung und Anmeldung dicht an der Berührung bleiben (iOS verlangt das)
+    return api('GET', '/api/push/key').then(function (k) {
+      return Notification.requestPermission().then(function (perm) {
+        if (perm !== 'granted') throw new Error('Benachrichtigungen sind für Boobo nicht erlaubt. In den Einstellungen des Handys einschalten.');
+        return k;
+      });
+    }).then(function (k) {
+      return navigator.serviceWorker.ready.then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (existing) {
+          if (existing) return existing;
+          return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(k.public_key) });
+        });
+      });
+    }).then(registerPush);
+  }
+  function disablePush() {
+    return pushSubscription().then(function (sub) {
+      if (!sub) return null;
+      return api('DELETE', '/api/push/subscriptions', { endpoint: sub.endpoint }).catch(function () { /* egal */ })
+        .then(function () { return sub.unsubscribe(); });
+    });
+  }
+  // Beim Start: bestehende Anmeldung dem Server noch einmal sagen (hält sie frisch, z. B. nach einem Umzug der Datenbank)
+  function syncPush() {
+    pushSubscription().then(function (sub) {
+      if (sub) return registerPush(sub).catch(function () { /* später wieder */ });
+    });
+  }
+
+  function renderPushSettings() {
+    var toggle = $('#push-toggle');
+    var hint = $('#push-hint');
+    var test = $('#btn-push-test');
+    test.hidden = true;
+    if (!pushSupported()) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      if (isIOS() && !isStandalone()) hint.textContent = 'Auf dem iPhone geht das erst, wenn Boobo auf dem Home-Bildschirm liegt (siehe unten).';
+      else if (!window.isSecureContext) hint.textContent = 'Nur über die verschlüsselte Adresse (https) möglich, siehe „Als App auf den Startbildschirm“.';
+      else hint.textContent = 'Dieser Browser kann keine Benachrichtigungen.';
+      return;
+    }
+    toggle.disabled = false;
+    pushSubscription().then(function (sub) {
+      toggle.checked = !!sub;
+      test.hidden = !sub;
+      if (sub) hint.textContent = 'Dieses Handy bekommt Mamas Erinnerungen, auch wenn Boobo zu ist.';
+      else if (Notification.permission === 'denied') hint.textContent = 'Benachrichtigungen sind für Boobo im Handy gesperrt. Dort erlauben, dann hier einschalten.';
+      else hint.textContent = 'Erinnerungen kommen dann auch an, wenn Boobo zu ist.';
+    });
+  }
+
+  function togglePush(sw) {
+    sw.disabled = true;
+    var p = sw.checked ? enablePush() : disablePush();
+    p.then(function () {
+      showToast(sw.checked ? 'Dieses Handy ist dabei.' : 'Keine Benachrichtigungen mehr auf diesem Handy.', { duration: 3000 });
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 7000 });
+    }).then(function () {
+      sw.disabled = false;
+      renderPushSettings();
+    });
+  }
+
+  function sendTestPush() {
+    var btn = $('#btn-push-test');
+    btn.disabled = true;
+    pushSubscription().then(function (sub) {
+      return api('POST', '/api/push/test', sub ? { endpoint: sub.endpoint } : {});
+    }).then(function (r) {
+      if (r && r.sent) showToast('Abgeschickt. Gleich sollte es klingeln.', { duration: 4000 });
+      else showToast('Der Push-Dienst hat nicht angenommen. Hat das NAS Internet?', { error: true, duration: 7000 });
+    }).catch(function (err) {
+      showToast(errorText(err), { error: true, duration: 7000 });
+    }).then(function () { btn.disabled = false; });
   }
 
   // ---------- Toast ----------
@@ -1232,6 +1489,9 @@
     $('#settings-meta').textContent = 'Boobo · Version ' + APP_VERSION + ' · ' + location.host;
     segSet($('#theme-seg'), getTheme());
     $('#night-toggle').checked = nightEnabled();
+    $('#remind-sound-toggle').checked = remindSoundEnabled();
+    renderPushSettings();
+    renderQuietSettings(null);
     renderInstallHelp(lastHealth);
     renderMedAdmin();
     refreshMeds();
@@ -1245,12 +1505,24 @@
       lastHealth = null;
       renderInstallHelp(null);
     });
-    if (cur == null) {
-      api('GET', '/api/settings').then(function (s) {
-        if (s && s.interval_minutes) { form.interval_minutes.value = s.interval_minutes; updateIntervalHint(); }
-      }).catch(function () { /* egal */ });
-    }
+    api('GET', '/api/settings').then(function (s) {
+      if (!s) return;
+      if (cur == null && s.interval_minutes) { form.interval_minutes.value = s.interval_minutes; updateIntervalHint(); }
+      renderQuietSettings(s);
+    }).catch(function () { /* egal */ });
     openDialog($('#dlg-settings'));
+  }
+
+  // Nachtruhe: Schalter plus zwei Uhrzeiten; null = Server kennt sie (noch) nicht
+  function renderQuietSettings(s) {
+    var form = $('#form-settings');
+    var on = !!(s && s.reminder_quiet_from && s.reminder_quiet_to);
+    $('#quiet-toggle').checked = on;
+    if (on) {
+      form.quiet_from.value = s.reminder_quiet_from;
+      form.quiet_to.value = s.reminder_quiet_to;
+    }
+    $('#quiet-times').hidden = !on;
   }
 
   function updateIntervalHint() {
@@ -1266,11 +1538,19 @@
       showToast('Der Abstand muss zwischen 30 Minuten und 12 Stunden liegen.', { error: true, duration: 5000 });
       return;
     }
+    var quietOn = $('#quiet-toggle').checked;
+    var qf = form.quiet_from.value;
+    var qt = form.quiet_to.value;
+    if (quietOn && (!/^\d{2}:\d{2}$/.test(qf) || !/^\d{2}:\d{2}$/.test(qt) || qf === qt)) {
+      showToast('Für die Ruhezeit bitte zwei verschiedene Uhrzeiten eintragen.', { error: true, duration: 5000 });
+      return;
+    }
     var submit = $('button[type=submit]', form);
     submit.disabled = true;
-    api('PUT', '/api/settings', { interval_minutes: v }).then(function () {
+    var body = { interval_minutes: v, reminder_quiet_from: quietOn ? qf : null, reminder_quiet_to: quietOn ? qt : null };
+    api('PUT', '/api/settings', body).then(function () {
       closeDialog($('#dlg-settings'));
-      showToast('Abstand gespeichert: ' + formatDuration(v, 'rel'), { duration: 3000 });
+      showToast('Gespeichert.', { sub: 'Abstand ' + formatDuration(v, 'rel') + (quietOn ? ' · Ruhe ' + qf + ' bis ' + qt : ''), duration: 3000 });
       return refresh();
     }).catch(function (err) {
       showToast(errorText(err), { error: true, duration: 6000 });
@@ -1630,8 +1910,26 @@
     if (isNum(m.max_per_day)) parts.push('max. ' + m.max_per_day + ' pro Tag');
     if (isNum(m.min_gap_minutes) && m.min_gap_minutes > 0) parts.push('Abstand ' + formatHours(m.min_gap_minutes) + ' h');
     if (!parts.length) parts.push('ohne Vorgaben');
+    var rem = reminderRuleText(m);
+    if (rem) parts.push(rem);
     if (!isActiveMed(m)) parts.push('pausiert');
     return parts.join(' · ');
+  }
+
+  function trimHHMM(s) { return String(s || '').replace(/^0(\d:)/, '$1'); }
+  function reminderAfterMinutes(m) {
+    var r = reminderOf(m);
+    if (r && isNum(r.after_minutes) && r.after_minutes > 0) return r.after_minutes;
+    return isNum(m.min_gap_minutes) ? m.min_gap_minutes : 0;
+  }
+  function reminderRuleText(m) {
+    var r = reminderOf(m);
+    if (!r || !r.mode || r.mode === 'off') return '';
+    var t;
+    if (r.mode === 'times') t = 'Erinnerung ' + (r.times || []).map(trimHHMM).join(', ');
+    else t = 'Erinnerung ' + formatHours(reminderAfterMinutes(m)) + ' h nach Einnahme';
+    if (isNum(r.repeat_minutes) && r.repeat_minutes > 0) t += ', alle ' + formatDuration(r.repeat_minutes, 'rel') + ' nochmal';
+    return t;
   }
 
   function renderMedAdmin() {
@@ -1678,9 +1976,58 @@
     f.med_max.value = m && isNum(m.max_per_day) ? String(m.max_per_day) : '';
     f.med_gap.value = m && isNum(m.min_gap_minutes) && m.min_gap_minutes > 0 ? formatHoursField(m.min_gap_minutes) : '';
     medGapShown = f.med_gap.value;
+    var r = reminderOf(m) || { mode: 'off', times: [], after_minutes: null, repeat_minutes: 0 };
+    segSet($('#med-rem-seg'), r.mode === 'times' || r.mode === 'after_last' ? r.mode : 'off');
+    f.med_rem_times.value = (r.times || []).map(trimHHMM).join(', ');
+    f.med_rem_after.value = isNum(r.after_minutes) && r.after_minutes > 0 ? formatHoursField(r.after_minutes) : '';
+    f.med_rem_repeat.value = isNum(r.repeat_minutes) ? String(r.repeat_minutes) : '0';
+    if (f.med_rem_repeat.value !== String(isNum(r.repeat_minutes) ? r.repeat_minutes : 0)) f.med_rem_repeat.value = '0';
     $('#btn-med-delete').hidden = !m;
     updateMedHint();
+    updateMedReminderFields();
     openDialog($('#dlg-med'));
+  }
+
+  // "8:00, 20:00" → ["08:00", "20:00"]; null bei Unsinn
+  function parseTimesField(raw) {
+    var out = [];
+    var parts = String(raw || '').split(/[,;\s]+/).filter(Boolean);
+    for (var i = 0; i < parts.length; i++) {
+      var mt = /^(\d{1,2})(?:[:.](\d{2}))?$/.exec(parts[i]);
+      if (!mt) return null;
+      var h = parseInt(mt[1], 10);
+      var mi = mt[2] ? parseInt(mt[2], 10) : 0;
+      if (h > 23 || mi > 59) return null;
+      var v = pad2(h) + ':' + pad2(mi);
+      if (out.indexOf(v) === -1) out.push(v);
+    }
+    return out.sort();
+  }
+
+  function updateMedReminderFields() {
+    var f = $('#form-med').elements;
+    var mode = segGet($('#med-rem-seg')) || 'off';
+    $('#med-rem-times-field').hidden = mode !== 'times';
+    $('#med-rem-after-field').hidden = mode !== 'after_last';
+    $('#med-rem-repeat-field').hidden = mode === 'off';
+    var hint = $('#med-rem-hint');
+    var text = '';
+    if (mode === 'times') {
+      var times = parseTimesField(f.med_rem_times.value);
+      text = times && times.length ? 'Erinnert jeden Tag um ' + times.map(trimHHMM).join(', ') + '.' : 'Uhrzeiten mit Komma, z. B. 8:00, 20:00.';
+    } else if (mode === 'after_last') {
+      var h = parseGapHours(f.med_rem_after.value);
+      var gapH = parseGapHours(f.med_gap.value);
+      var eff = !isNaN(h) && h > 0 ? h : (!isNaN(gapH) && gapH > 0 ? gapH : 0);
+      text = eff > 0 ? 'Erinnert ' + formatDuration(Math.round(eff * 60), 'rel') + ' nach der letzten Einnahme.' : 'Stunden eintragen, oder oben einen Abstand.';
+    }
+    if (mode !== 'off') {
+      var rep = parseInt(f.med_rem_repeat.value, 10);
+      if (rep > 0) text += ' Danach alle ' + formatDuration(rep, 'rel') + ' nochmal, bis es genommen ist.';
+      else text += ' Nur einmal, dazu „In 15 Minuten“ im Popup.';
+    }
+    hint.textContent = text;
+    hint.hidden = mode === 'off';
   }
 
   function parseGapHours(raw) {
@@ -1724,6 +2071,30 @@
     // Abstand nicht angefasst → Minuten unverändert lassen (die Stundenanzeige ist gerundet, z. B. 75 min)
     if (!isNew && f.med_gap.value === medGapShown) {
       body.min_gap_minutes = isNum(editingMed.min_gap_minutes) && editingMed.min_gap_minutes > 0 ? editingMed.min_gap_minutes : 0;
+    }
+    // Erinnerung
+    var mode = segGet($('#med-rem-seg')) || 'off';
+    body.reminder_mode = mode;
+    body.reminder_times = [];
+    body.reminder_after_minutes = null;
+    body.reminder_repeat_minutes = mode === 'off' ? 0 : (parseInt(f.med_rem_repeat.value, 10) || 0);
+    if (mode === 'times') {
+      var times = parseTimesField(f.med_rem_times.value);
+      if (!times || !times.length) { showToast('Bitte Uhrzeiten eintragen, z. B. 8:00, 20:00.', { error: true, duration: 5000 }); return; }
+      body.reminder_times = times;
+    } else if (mode === 'after_last') {
+      var afterH = parseGapHours(f.med_rem_after.value);
+      if (isNaN(afterH) || afterH < 0 || afterH > 168) { showToast('Stunden nach der Einnahme bitte zwischen 0 und 168.', { error: true, duration: 5000 }); return; }
+      if (afterH > 0) {
+        body.reminder_after_minutes = Math.round(afterH * 60);
+        var prev = reminderOf(editingMed);
+        if (!isNew && prev && isNum(prev.after_minutes) && prev.after_minutes > 0 && formatHoursField(prev.after_minutes) === f.med_rem_after.value) {
+          body.reminder_after_minutes = prev.after_minutes;
+        }
+      } else if (!(body.min_gap_minutes > 0)) {
+        showToast('Dafür braucht es Stunden nach der Einnahme oder einen Abstand.', { error: true, duration: 5000 });
+        return;
+      }
     }
     if (isNew) {
       if (!body.dose) delete body.dose;
@@ -3202,6 +3573,18 @@
     $('#btn-med-delete').addEventListener('click', deleteMed);
     $('#form-med').elements.med_gap.addEventListener('input', updateMedHint);
     $('#form-med').elements.med_max.addEventListener('input', updateMedHint);
+    $('#form-med').elements.med_gap.addEventListener('input', updateMedReminderFields);
+    $('#form-med').elements.med_rem_times.addEventListener('input', updateMedReminderFields);
+    $('#form-med').elements.med_rem_after.addEventListener('input', updateMedReminderFields);
+    $('#form-med').elements.med_rem_repeat.addEventListener('change', updateMedReminderFields);
+    $('#med-rem-seg').addEventListener('click', updateMedReminderFields);
+    $('#btn-reminder-snooze').addEventListener('click', snoozeReminders);
+    $('#push-toggle').addEventListener('change', function () { togglePush(this); });
+    $('#btn-push-test').addEventListener('click', sendTestPush);
+    $('#remind-sound-toggle').addEventListener('change', function () { lsSet(LS_REMIND_SOUND, this.checked ? '1' : '0'); });
+    $('#quiet-toggle').addEventListener('change', function () { $('#quiet-times').hidden = !this.checked; });
+    document.addEventListener('touchend', primeAudio, { once: true, passive: true });
+    document.addEventListener('click', primeAudio, { once: true });
     $('#btn-settings').addEventListener('click', openSettings);
 
     $('#form-add').addEventListener('submit', submitAdd);
@@ -3237,6 +3620,7 @@
     window.addEventListener('offline', function () { setOnline(false); });
 
     initServiceWorker();
+    syncPush();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

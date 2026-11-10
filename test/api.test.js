@@ -330,14 +330,14 @@ describe('Boobo API', () => {
   test('settings GET/PUT with bounds', async () => {
     let r = await api('GET', '/api/settings');
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json, { interval_minutes: INTERVAL });
+    assert.deepEqual(r.json, { interval_minutes: INTERVAL, reminder_quiet_from: null, reminder_quiet_to: null });
 
     r = await api('PUT', '/api/settings', { interval_minutes: 150 });
     assert.equal(r.status, 200);
-    assert.deepEqual(r.json, { interval_minutes: 150 });
+    assert.deepEqual(r.json, { interval_minutes: 150, reminder_quiet_from: null, reminder_quiet_to: null });
 
     r = await api('GET', '/api/settings');
-    assert.deepEqual(r.json, { interval_minutes: 150 });
+    assert.deepEqual(r.json, { interval_minutes: 150, reminder_quiet_from: null, reminder_quiet_to: null });
 
     const s = await api('GET', '/api/state');
     assert.equal(s.json.interval_minutes, 150);

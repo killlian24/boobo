@@ -350,6 +350,35 @@
         <button type="button" id="btn-med-add" class="btn ghost link-btn">Hinzufügen</button>
       </div>
 
+      <div class="field" id="reminder-settings">
+        <span class="field-label">Erinnerungen</span>
+        <label class="switch-row">
+          <span>Auf diesem Handy benachrichtigen</span>
+          <input type="checkbox" role="switch" id="push-toggle" class="switch">
+        </label>
+        <p class="hint" id="push-hint"></p>
+        <button type="button" id="btn-push-test" class="btn ghost link-btn" hidden>Testnachricht schicken</button>
+        <label class="switch-row">
+          <span>Ton und Vibration in der App</span>
+          <input type="checkbox" role="switch" id="remind-sound-toggle" class="switch">
+        </label>
+        <label class="switch-row">
+          <span>Nachts Ruhe</span>
+          <input type="checkbox" role="switch" id="quiet-toggle" class="switch">
+        </label>
+        <div class="field-row quiet-times" id="quiet-times" hidden>
+          <label class="field">
+            <span class="field-label">Ruhe ab</span>
+            <input type="time" name="quiet_from" value="23:00">
+          </label>
+          <label class="field">
+            <span class="field-label">bis</span>
+            <input type="time" name="quiet_to" value="06:30">
+          </label>
+        </div>
+        <p class="hint" id="quiet-hint">Keine Meldung in der Ruhezeit; was ansteht, kommt danach.</p>
+      </div>
+
       <div class="field">
         <a class="btn ghost link-btn" href="/api/export.csv" download="boobo-export.csv">CSV exportieren</a>
         <div class="export-more">
@@ -368,6 +397,19 @@
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Schließen</button>
         <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Erinnerung: Zeit für Mamas Medikament (checkReminders in app.js) -->
+  <dialog id="dlg-reminder" class="sheet" aria-labelledby="reminder-title">
+    <form method="dialog">
+      <h2 id="reminder-title">Kurz an dich denken</h2>
+      <p class="dlg-sub" id="reminder-sub"></p>
+      <ul id="reminder-list" class="med-list reminder-list"></ul>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" id="btn-reminder-snooze">In 15 Minuten</button>
+        <button type="button" class="btn ghost" data-close>Schließen</button>
       </div>
     </form>
   </dialog>
@@ -472,6 +514,33 @@
         </label>
       </div>
       <p class="hint" id="med-hint"></p>
+      <div class="field">
+        <span class="field-label" id="med-rem-label">Erinnerung</span>
+        <div class="segmented three neutral" id="med-rem-seg" role="radiogroup" aria-labelledby="med-rem-label" data-name="reminder_mode">
+          <button type="button" class="seg" data-value="off" aria-pressed="false">Keine</button>
+          <button type="button" class="seg" data-value="times" aria-pressed="false">Zu Uhrzeiten</button>
+          <button type="button" class="seg" data-value="after_last" aria-pressed="false">Nach Einnahme</button>
+        </div>
+      </div>
+      <label class="field" id="med-rem-times-field" hidden>
+        <span class="field-label">Uhrzeiten (mit Komma)</span>
+        <input type="text" name="med_rem_times" inputmode="numeric" placeholder="z. B. 8:00, 20:00" autocomplete="off">
+      </label>
+      <label class="field" id="med-rem-after-field" hidden>
+        <span class="field-label">Stunden nach der letzten Einnahme</span>
+        <input type="text" name="med_rem_after" inputmode="decimal" placeholder="wie der Abstand" autocomplete="off">
+      </label>
+      <label class="field" id="med-rem-repeat-field" hidden>
+        <span class="field-label">Nochmal erinnern, bis es genommen ist</span>
+        <select name="med_rem_repeat">
+          <option value="0">Nur einmal</option>
+          <option value="10">Alle 10 Minuten</option>
+          <option value="15">Alle 15 Minuten</option>
+          <option value="30">Alle 30 Minuten</option>
+          <option value="60">Jede Stunde</option>
+        </select>
+      </label>
+      <p class="hint" id="med-rem-hint" hidden></p>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
         <button type="submit" class="btn primary">Speichern</button>
